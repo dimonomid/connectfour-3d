@@ -1,5 +1,5 @@
 [package]
-name = "connect4-3d"
+name = "connect4"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 #kiss3d = { path = "/home/dmitrii/mydata/projects/rust/kiss3d" }
 #kiss3d = { git = "https://github.com/sebcrozet/kiss3d.git" }
+anyhow = "1"
 kiss3d = "0.35"
 ordered-float = "1"
