@@ -1,0 +1,12 @@
+[package]
+name = "connect4-3d"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+#kiss3d = { path = "/home/dmitrii/mydata/projects/rust/kiss3d" }
+#kiss3d = { git = "https://github.com/sebcrozet/kiss3d.git" }
+kiss3d = "0.35"
+ordered-float = "1"
