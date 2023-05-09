@@ -1,10 +1,7 @@
-use std::collections::HashMap;
-use std::time::Duration;
-
 use super::game;
+use anyhow::{Result, Context};
 
 use tokio::sync::mpsc;
-use tokio::time;
 
 pub struct GameManager {
     game: game::Game,
@@ -41,8 +38,8 @@ impl GameManager {
         }
     }
 
-    pub async fn run(&mut self) {
-        self.upd_player_turns().await;
+    pub async fn run(&mut self) -> Result<()> {
+        self.upd_player_turns().await.context("initial update")?;
 
         loop {
             tokio::select! {
@@ -51,7 +48,7 @@ impl GameManager {
                         PlayerToGameManager::PutToken(coords) => {
                             self.handle_player_put_token(
                                 game::Side::White, coords,
-                            ).await;
+                            ).await.context("white")?;
                         },
                     }
                 }
@@ -61,45 +58,31 @@ impl GameManager {
                         PlayerToGameManager::PutToken(coords) => {
                             self.handle_player_put_token(
                                 game::Side::Black, coords,
-                            ).await;
+                            ).await.context("black")?;
                         },
                     }
                 }
             }
         }
-
-        //let mut interval = time::interval(Duration::from_millis(1000));
-        //interval.tick().await;
-
-        //loop {
-        //interval.tick().await;
-        //match self
-        //.to_ui
-        //.send(GameManagerToUI::SetToken(
-        //game::Side::Black,
-        //game::CoordsFull::new(1, 0, 3),
-        //))
-        //.await
-        //{
-        //Ok(()) => {}
-        //Err(e) => return,
-        //}
-        //println!("hey from GameManager");
-        //}
     }
 
-    pub async fn upd_player_turns(&mut self) {
+    pub async fn upd_player_turns(&mut self) -> Result<()> {
         self.player_chans_by_side(self.cur_side)
             .to
             .send(GameManagerToPlayer::GameState(PlayerGameState::YourTurn))
-            .await;
+            .await
+            .context(format!("player {:?}", self.cur_side))?;
 
-        self.player_chans_by_side(self.cur_side.opposite())
+        let opposite_side = self.cur_side.opposite();
+        self.player_chans_by_side(opposite_side)
             .to
             .send(GameManagerToPlayer::GameState(
                 PlayerGameState::OpponentsTurn,
             ))
-            .await;
+            .await
+            .context(format!("player {:?}", opposite_side))?;
+
+        Ok(())
     }
 
     pub fn player_chans_by_side(&self, side: game::Side) -> &PlayerChans {
@@ -109,21 +92,21 @@ impl GameManager {
         };
     }
 
-    pub async fn handle_player_put_token(&mut self, side: game::Side, coords: game::CoordsXZ) {
+    pub async fn handle_player_put_token(&mut self, side: game::Side, coords: game::CoordsXZ) -> Result<()> {
         println!("GM: player {:?} put token {:?}", side, coords);
 
         if side != self.cur_side {
             println!("wrong side: {:?}, waiting for {:?}", side, self.cur_side);
-            self.upd_player_turns().await;
-            return;
+            self.upd_player_turns().await?;
+            return Ok(());
         }
 
         let res = match self.game.put_token(side, coords.x, coords.z) {
             Ok(res) => res,
             Err(err) => {
                 println!("can't put: {}", err);
-                self.upd_player_turns().await;
-                return;
+                self.upd_player_turns().await?;
+                return Ok(());
             }
         };
 
@@ -132,10 +115,12 @@ impl GameManager {
                 side,
                 game::CoordsFull::new(coords.x, res.y, coords.z),
             ))
-            .await;
+            .await.context("updating UI")?;
 
         self.cur_side = self.cur_side.opposite();
-        self.upd_player_turns().await;
+        self.upd_player_turns().await?;
+
+        Ok(())
     }
 }
 
@@ -186,6 +171,7 @@ impl PlayerLocal {
         to_gm: mpsc::Sender<PlayerToGameManager>,
         to_ui: mpsc::Sender<PlayerLocalToUI>,
     ) -> PlayerLocal {
+        // Create the channel which we'll be asking UI to send the user-picked coords to.
         let (coords_from_ui_sender, coords_from_ui_receiver) = mpsc::channel::<game::CoordsXZ>(1);
 
         PlayerLocal {
@@ -198,7 +184,7 @@ impl PlayerLocal {
         }
     }
 
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> Result<()> {
         loop {
             tokio::select! {
                 Some(val) = self.from_gm.recv() => {
@@ -207,35 +193,29 @@ impl PlayerLocal {
                     match val {
                         GameManagerToPlayer::OpponentPutToken(_) => {},
                         GameManagerToPlayer::GameState(state) => {
-                            self.handle_game_state(state).await;
+                            self.handle_game_state(state).await?;
                         },
                     }
                 }
 
                 Some(coords) = self.coords_from_ui_receiver.recv() => {
                     println!("got coords from UI: {:?}", &coords);
-                    self.to_gm.send(PlayerToGameManager::PutToken(coords)).await;
+                    self.to_gm.send(PlayerToGameManager::PutToken(coords)).await?;
                 }
             }
         }
-
-        //let mut interval = time::interval(Duration::from_millis(1000));
-        //interval.tick().await;
-
-        //loop {
-        //interval.tick().await;
-        //println!("hey from player {:?}", self.side);
-        //}
     }
 
-    pub async fn handle_game_state(&mut self, state: PlayerGameState) {
+    async fn handle_game_state(&mut self, state: PlayerGameState) -> Result<()> {
         if state == PlayerGameState::YourTurn {
             self.to_ui
                 .send(PlayerLocalToUI::RequestInput(
                     self.side,
                     self.coords_from_ui_sender.clone(),
                 ))
-                .await;
+                .await?;
         }
+
+        Ok(())
     }
 }
