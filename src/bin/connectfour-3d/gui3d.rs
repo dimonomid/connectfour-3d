@@ -54,23 +54,22 @@ impl Window3D {
         from_gm: mpsc::Receiver<GameManagerToUI>,
         from_players: mpsc::Receiver<PlayerLocalToUI>,
     ) -> Window3D {
-        let mut w = Window::new("Connect4 3D");
-        let font = Font::default();
+        let mut w = Window::new("ConnectFour 3D");
+        w.set_light(Light::StickToCamera);
 
-        let eye = Point3::new(20.0, 20.0, 20.0);
+        // Set up camera in a meaningful position.
+        let eye = Point3::new(18.0, 18.0, 18.0);
         let at = Point3::origin();
         let camera = ArcBall::new(eye, at);
 
+        // Create pole pointer, initially invisible. It'll be visible only when the mouse cursor
+        // hovers a pole.
         let mut pole_pointer = w.add_sphere(POINTER_RADIUS);
-        pole_pointer.set_color(1.0, 0.5, 0.5);
         pole_pointer.set_visible(false);
-
-        w.set_light(Light::StickToCamera);
-        w.set_framerate_limit(None);
 
         let mut window = Window3D {
             w,
-            font,
+            font: Font::default(),
             camera,
             pole_pointer,
             coord_sender: None,
@@ -81,12 +80,12 @@ impl Window3D {
             last_pos: Point2::new(0.0f32, 0.0f32),
         };
 
-        window.add_frame();
+        window.create_frame();
 
         window
     }
 
-    fn add_frame(&mut self) {
+    fn create_frame(&mut self) {
         let mut foundation = self
             .w
             .add_cube(FOUNDATION_WIDTH, FOUNDATION_HEIGHT, FOUNDATION_WIDTH);
