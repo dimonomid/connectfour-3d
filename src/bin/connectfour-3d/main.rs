@@ -7,16 +7,17 @@ use tokio::{task};
 
 use connect4::game::{Side};
 use connect4::game_manager::{
-    GameManager, GameManagerToPlayer, GameManagerToUI, PlayerChans, PlayerLocal, PlayerLocalToUI,
+    GameManager, GameManagerToPlayer, GameManagerToUI, PlayerChans,
     PlayerToGameManager,
 };
+use connect4::game_manager::player_local::{PlayerLocal, PlayerLocalToUI};
 
 fn main() {
     let (gm_to_ui_sender, gm_to_ui_receiver) = mpsc::channel::<GameManagerToUI>(16);
     let (player_to_ui_tx, player_to_ui_rx) = mpsc::channel::<PlayerLocalToUI>(1);
 
-    // Setup tokio stuff in another thread.
-    thread::spawn(move || tokio_thread(gm_to_ui_sender, player_to_ui_tx));
+    // Setup tokio runtime in another thread.
+    thread::spawn(move || async_runtime(gm_to_ui_sender, player_to_ui_tx));
 
     // Run GUI in the main thread. It's easier since when the user closes the window, the whole
     // thing gets killed (albeit not yet gracefully).
@@ -28,7 +29,7 @@ fn main() {
     // TODO: would be nice to implement some graceful shutdown, but not bothering for now.
 }
 
-fn tokio_thread(
+fn async_runtime(
     gm_to_ui_sender: mpsc::Sender<GameManagerToUI>,
     player_to_ui_tx: mpsc::Sender<PlayerLocalToUI>,
 ) {

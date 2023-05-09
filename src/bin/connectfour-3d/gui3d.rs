@@ -13,7 +13,8 @@ use std::cmp::Ordering;
 
 use ordered_float::OrderedFloat;
 use connect4::game::{CoordsXZ, Side, ROW_SIZE};
-use connect4::game_manager::{GameManagerToUI, PlayerLocalToUI};
+use connect4::game_manager::{GameManagerToUI};
+use connect4::game_manager::player_local::{PlayerLocalToUI};
 
 const POLE_WIDTH: f32 = 1.0;
 const TOKEN_D_TO_HEIGHT: f32 = 0.8;

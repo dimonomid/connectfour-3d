@@ -19,25 +19,17 @@ pub struct PutResult {
     pub won: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Side {
     Black,
     White,
 }
-
-impl Eq for Side {}
 
 #[derive(Clone, Copy, Debug)]
 pub struct CoordsFull {
     pub x: usize,
     pub y: usize,
     pub z: usize,
-}
-
-impl CoordsFull {
-    pub fn new(x: usize, y: usize, z: usize) -> CoordsFull {
-        CoordsFull{ x, y, z }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
