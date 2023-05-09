@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 #kiss3d = { path = "/home/dmitrii/mydata/projects/rust/kiss3d" }
 #kiss3d = { git = "https://github.com/sebcrozet/kiss3d.git" }
+tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 kiss3d = "0.35"
 ordered-float = "1"
