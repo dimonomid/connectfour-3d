@@ -67,14 +67,25 @@ impl PlayerLocal {
     }
 
     async fn handle_game_state(&mut self, state: PlayerGameState) -> Result<()> {
-        if state == PlayerGameState::YourTurn {
-            self.to_ui
-                .send(PlayerLocalToUI::RequestInput(
-                    self.side.unwrap(),
-                    self.coords_from_ui_sender.clone(),
-                ))
-                .await?;
-        }
+        match state {
+            PlayerGameState::YourTurn => {
+                self.to_ui
+                    .send(PlayerLocalToUI::RequestInput(
+                        self.side.unwrap(),
+                        self.coords_from_ui_sender.clone(),
+                    ))
+                    .await?;
+            },
+
+            // We don't need to do anything special on any other game state, but still enumerating
+            // them all explicitly so that if the enum changes, we're forced by the compiler to
+            // revisit this logic.
+
+            PlayerGameState::NoGame => {},
+            PlayerGameState::OpponentsTurn => {},
+            PlayerGameState::OpponentWon => {},
+            PlayerGameState::YouWon => {},
+        };
 
         Ok(())
     }
