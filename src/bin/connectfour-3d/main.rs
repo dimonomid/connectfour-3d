@@ -5,9 +5,8 @@ use std::thread;
 use tokio::sync::mpsc;
 use tokio::{task};
 
-use connect4::game::{Side};
 use connect4::game_manager::{
-    GameManager, GameManagerToPlayer, GameManagerToUI, PlayerChans,
+    GameManager, GameManagerToPlayer, GameManagerToUI,
     PlayerToGameManager,
 };
 use connect4::game_manager::player_local::{PlayerLocal, PlayerLocalToUI};
@@ -46,9 +45,10 @@ fn async_runtime(
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let handle_pwhite = task::spawn(async {
+        let mut set = task::JoinSet::new();
+
+        set.spawn(async {
             let mut pwhite = PlayerLocal::new(
-                Side::White,
                 gm_to_pwhite_rx,
                 pwhite_to_gm_tx,
                 pwhite_to_ui_tx,
@@ -58,9 +58,8 @@ fn async_runtime(
             Ok::<(), anyhow::Error>(())
         });
 
-        let handle_pblack = task::spawn(async {
+        set.spawn(async {
             let mut pblack = PlayerLocal::new(
-                Side::Black,
                 gm_to_pblack_rx,
                 pblack_to_gm_tx,
                 pblack_to_ui_tx,
@@ -70,26 +69,25 @@ fn async_runtime(
             Ok::<(), anyhow::Error>(())
         });
 
-        let handle_gm = task::spawn(async {
+        set.spawn(async {
             let mut gm = GameManager::new(
                 gm_to_ui_sender,
-                PlayerChans {
-                    to: gm_to_pwhite_tx,
-                    from: pwhite_to_gm_rx,
-                },
-                PlayerChans {
-                    to: gm_to_pblack_tx,
-                    from: pblack_to_gm_rx,
-                },
+
+                gm_to_pwhite_tx,
+                pwhite_to_gm_rx,
+
+                gm_to_pblack_tx,
+                pblack_to_gm_rx,
             );
             gm.run().await?;
 
             Ok::<(), anyhow::Error>(())
         });
 
-        let handles = vec![handle_pwhite, handle_pblack, handle_gm];
-        for h in handles {
-            let res = match h.await {
+        // Normally the tasks should run indefinitely, but if some of them error out,
+        // print the errors.
+        while let Some(v) = set.join_next().await {
+            let res = match v {
                 Err(err) => { println!("task panicked {:?}", err); continue; },
                 Ok(res) => res,
             };

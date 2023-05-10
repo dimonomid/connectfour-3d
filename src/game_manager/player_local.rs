@@ -13,7 +13,7 @@ pub enum PlayerLocalToUI {
 }
 
 pub struct PlayerLocal {
-    side: game::Side,
+    side: Option<game::Side>,
 
     from_gm: mpsc::Receiver<GameManagerToPlayer>,
     to_gm: mpsc::Sender<PlayerToGameManager>,
@@ -26,7 +26,6 @@ pub struct PlayerLocal {
 
 impl PlayerLocal {
     pub fn new(
-        side: game::Side,
         from_gm: mpsc::Receiver<GameManagerToPlayer>,
         to_gm: mpsc::Sender<PlayerToGameManager>,
         to_ui: mpsc::Sender<PlayerLocalToUI>,
@@ -35,7 +34,7 @@ impl PlayerLocal {
         let (coords_from_ui_sender, coords_from_ui_receiver) = mpsc::channel::<game::CoordsXZ>(1);
 
         PlayerLocal {
-            side,
+            side: None,
             from_gm,
             to_gm,
             to_ui,
@@ -51,6 +50,7 @@ impl PlayerLocal {
                     println!("player {:?}: received from GM: {:?}", self.side, val);
 
                     match val {
+                        GameManagerToPlayer::SetSide(side) => { self.side = Some(side); },
                         GameManagerToPlayer::OpponentPutToken(_) => {},
                         GameManagerToPlayer::GameState(state) => {
                             self.handle_game_state(state).await?;
@@ -70,7 +70,7 @@ impl PlayerLocal {
         if state == PlayerGameState::YourTurn {
             self.to_ui
                 .send(PlayerLocalToUI::RequestInput(
-                    self.side,
+                    self.side.unwrap(),
                     self.coords_from_ui_sender.clone(),
                 ))
                 .await?;
