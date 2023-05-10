@@ -45,8 +45,16 @@ impl PlayerLocal {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        // If we knew our side from the beginning, let GameManager know immediately.
-        self.update_state_if_ready().await?;
+        if let Some(side) = self.side {
+            self.to_gm
+                .send(PlayerToGameManager::SetSide(side))
+                .await?;
+        }
+
+        println!("player {:?}: letting GM know that we're ready", self.side);
+        self.to_gm
+            .send(PlayerToGameManager::StateChanged(PlayerState::Ready))
+            .await?;
 
         loop {
             tokio::select! {
@@ -55,17 +63,7 @@ impl PlayerLocal {
 
                     match val {
                         GameManagerToPlayer::SetSide(new_side) => {
-                            // GameManager lets us know about our side. If we knew that already,
-                            // then do nothing; otherwise, update the side, and also let
-                            // GameManager know about our updated state.
-                            match self.side {
-                                Some(side) if side == new_side => { continue; }
-                                _ => {
-                                    self.side = Some(new_side);
-                                    self.update_state_if_ready().await?;
-                                },
-                            }
-
+                            self.side = Some(new_side);
                         },
                         GameManagerToPlayer::OpponentPutToken(_) => {},
                         GameManagerToPlayer::GameState(state) => {
@@ -80,18 +78,6 @@ impl PlayerLocal {
                 }
             }
         }
-    }
-
-    async fn update_state_if_ready(&mut self) -> Result<()> {
-        if let Some(side) = self.side {
-            println!("player {:?}: letting GM know that we're ready", self.side);
-            let state = PlayerState::Ready(side);
-            self.to_gm
-                .send(PlayerToGameManager::StateChanged(state))
-                .await?;
-        }
-
-        Ok(())
     }
 
     async fn handle_game_state(&mut self, state: PlayerGameState) -> Result<()> {

@@ -14,19 +14,11 @@ pub struct GameManager {
 }
 
 struct PlayerCtx {
+    side: Option<game::Side>,
     state: PlayerState,
 
     to: mpsc::Sender<GameManagerToPlayer>,
     from: mpsc::Receiver<PlayerToGameManager>,
-}
-
-impl PlayerCtx {
-    fn side(&self) -> Option<game::Side> {
-        match self.state {
-            PlayerState::NotReady(_) => None,
-            PlayerState::Ready(side) => Some(side),
-        }
-    }
 }
 
 impl GameManager {
@@ -41,12 +33,14 @@ impl GameManager {
     ) -> GameManager {
         let p0 = PlayerCtx {
             state: PlayerState::NotReady("unknown".to_string()),
+            side: None,
             to: to_p0,
             from: from_p0,
         };
 
         let p1 = PlayerCtx {
             state: PlayerState::NotReady("unknown".to_string()),
+            side: None,
             to: to_p1,
             from: from_p1,
         };
@@ -106,39 +100,34 @@ impl GameManager {
         // Remember state for the player which sent us the update.
         self.players[i].state = state.clone();
 
-        // If the state is ready, check if both players are ready by now and agree on their colors.
+        // TODO: update UI about the player state
 
-        let side = match state {
-            PlayerState::NotReady(s) => {
-                println!("player {} is not ready: {}", i, s);
-                return Ok(());
-            }
-            PlayerState::Ready(side) => side,
-        };
+        Ok(())
+    }
 
-        let opponent = &self.players[Self::opponent_idx(i)];
-        match opponent.state {
-            PlayerState::Ready(opponent_side) if opponent_side == side.opposite() => {
-                println!("both players are ready: {}: {:?}, {}: {:?}", i, state, Self::opponent_idx(i), opponent.state);
-                // Both players are ready and agree on their colors, we're ready to start.
-                // TODO: this logic will have to change when we'll be dealing with reconnects.
-                self.cur_side = Some(game::Side::White);
-                self.upd_player_turns().await.context("initial update")?;
-                return Ok(());
-            }
-            _ => {}
+    async fn handle_player_set_side(&mut self, i: usize, side: game::Side) -> Result<()> {
+        if i != 0 {
+            println!("player {} is not primary, so ignoring its side update ({:?})", i, side);
+            return Ok(());
         }
 
-        println!("players are not ready: {}: {:?}, {}: {:?}", i, state, Self::opponent_idx(i), opponent.state);
+        // Remember state for the player which sent us the update.
+        self.players[i].side = Some(side);
 
-        // The other player is either not ready, or has a diferent side. Update it
-        // at least about the side.
+        // Let opponent know about its side as well.
         let opposite_side = side.opposite();
+        let opponent_idx = Self::opponent_idx(i);
+        self.players[opponent_idx].side = Some(opposite_side);
+        let opponent = &self.players[opponent_idx];
         opponent
             .to
             .send(GameManagerToPlayer::SetSide(opposite_side))
             .await
-            .context(format!("setting player {} side to {:?}", i, opposite_side))?;
+            .context(format!("setting player {} side to {:?}", opponent_idx, opposite_side))?;
+
+        println!("sides are known: {}: {:?}, {}: {:?}, gonna start", i, side, opponent_idx, opposite_side);
+        self.cur_side = Some(game::Side::White);
+        self.upd_player_turns().await.context("initial update")?;
 
         Ok(())
     }
@@ -160,7 +149,7 @@ impl GameManager {
     }
 
     fn player_by_side(&self, side: game::Side) -> Result<&PlayerCtx> {
-        match self.players[0].side() {
+        match self.players[0].side {
             Some(v) => {
                 if side == v {
                     return Ok(&self.players[0]);
@@ -174,6 +163,10 @@ impl GameManager {
 
     pub async fn handle_player_msg(&mut self, i: usize, msg: PlayerToGameManager) -> Result<()> {
         match msg {
+            PlayerToGameManager::SetSide(side) => {
+                self.handle_player_set_side(i, side).await?;
+                Ok(())
+            }
             PlayerToGameManager::StateChanged(state) => {
                 self.handle_player_state_change(i, state).await?;
                 Ok(())
@@ -190,7 +183,7 @@ impl GameManager {
         i: usize,
         coords: game::CoordsXZ,
     ) -> Result<()> {
-        let side = self.players[i].side();
+        let side = self.players[i].side;
 
         println!("GM: player {:?} put token {:?}", side, coords);
 
@@ -262,8 +255,7 @@ pub enum PlayerGameState {
 pub enum PlayerState {
     /// Not-yet-ready, with a human-readable string message explaining the status.
     NotReady(String),
-    /// Ready, with the side assigned.
-    Ready(game::Side),
+    Ready,
 }
 
 /// Message that GameManager can send to a player.
@@ -277,6 +269,10 @@ pub enum GameManagerToPlayer {
 /// Message that a player can send to GameManager.
 #[derive(Debug)]
 pub enum PlayerToGameManager {
+    /// Set side of this player. GameManager will correspondingly update the side of the opponent
+    /// player as well. Only primary player can send SetSide messages; if secondary player does
+    /// this, GameManager will just ignore it.
+    SetSide(game::Side),
     StateChanged(PlayerState),
     PutToken(game::CoordsXZ),
 }
