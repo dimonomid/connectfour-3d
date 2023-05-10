@@ -112,6 +112,9 @@ impl GameManager {
             return Ok(());
         }
 
+        // Update board state.
+        self.game.reset_board(&fgstate.board);
+
         // Remember state for the player which sent us the update.
         self.players[i].side = Some(fgstate.primary_player_side);
 
@@ -120,16 +123,22 @@ impl GameManager {
         let opponent_idx = Self::opponent_idx(i);
         self.players[opponent_idx].side = Some(opposite_side);
 
-        // And let opponent know about its (potentially new) side.
+        // Reset the game for the opponent.
         let opponent = &self.players[opponent_idx];
         opponent
             .to
-            .send(GameManagerToPlayer::SetSide(opposite_side))
+            .send(GameManagerToPlayer::Reset(fgstate.board.clone(), opposite_side))
             .await
-            .context(format!("setting player {} side to {:?}", opponent_idx, opposite_side))?;
+            .context(format!("resetting player {}, setting side to {:?}", opponent_idx, opposite_side))?;
+
+        // Update UI.
+        self.to_ui
+            .send(GameManagerToUI::ResetBoard(fgstate.board.clone()))
+            .await
+            .context("updating UI")?;
 
         println!("game state is known, gonna start: {}: {:?}, {}: {:?}, gonna start", i, fgstate.primary_player_side, opponent_idx, opposite_side);
-        // TODO: update board state
+
         self.next_move_side = Some(fgstate.next_move_side);
         self.upd_player_turns().await.context("initial update")?;
 
@@ -278,7 +287,7 @@ pub enum PlayerState {
 /// Message that GameManager can send to a player.
 #[derive(Debug)]
 pub enum GameManagerToPlayer {
-    SetSide(game::Side),
+    Reset(game::BoardState, game::Side),
     OpponentPutToken(game::CoordsXZ),
     GameState(PlayerGameState),
 }
@@ -286,8 +295,8 @@ pub enum GameManagerToPlayer {
 /// Message that a player can send to GameManager.
 #[derive(Debug)]
 pub enum PlayerToGameManager {
-    /// Overwrite full game state. Only primary player can send SetSide messages; if secondary
-    /// player does this, GameManager will just ignore it.
+    /// Overwrite full game state. Only primary player can send SetFullGameState messages; if
+    /// secondary player does this, GameManager will just ignore it.
     SetFullGameState(FullGameState),
     StateChanged(PlayerState),
     PutToken(game::CoordsXZ),
@@ -297,4 +306,5 @@ pub enum PlayerToGameManager {
 #[derive(Debug)]
 pub enum GameManagerToUI {
     SetToken(game::Side, game::CoordsFull),
+    ResetBoard(game::BoardState),
 }

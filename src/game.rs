@@ -7,9 +7,9 @@ pub struct Game {
     board: BoardState,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BoardState {
-    pub tokens: Vec<Option<Side>>,
+    tokens: Vec<Option<Side>>,
 }
 
 pub struct PutResult {
@@ -77,6 +77,14 @@ impl Game {
     pub fn get_token(&self, x: usize, y: usize, z: usize) -> Option<Side> {
         self.board.get(x, y, z)
     }
+
+    pub fn get_board(&self) -> &BoardState {
+        &self.board
+    }
+
+    pub fn reset_board(&mut self, board: &BoardState) {
+        self.board.copy_from(board);
+    }
 }
 
 impl BoardState {
@@ -92,10 +100,14 @@ impl BoardState {
         *self.tokens.get(Self::coord_to_idx(x, y, z)).unwrap()
     }
 
-    fn set(&mut self, side: Side, x: usize, y: usize, z: usize) {
+    pub fn set(&mut self, side: Side, x: usize, y: usize, z: usize) {
         panic_if_out_of_bounds(x, y, z);
 
         self.tokens[Self::coord_to_idx(x, y, z)] = Some(side);
+    }
+
+    pub fn copy_from(&mut self, another: &BoardState) {
+        self.tokens.copy_from_slice(&another.tokens);
     }
 
     fn coord_to_idx(x: usize, y: usize, z: usize) -> usize {

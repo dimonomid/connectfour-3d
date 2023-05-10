@@ -68,7 +68,7 @@ impl PlayerLocal {
                     println!("player {:?}: received from GM: {:?}", self.side, val);
 
                     match val {
-                        GameManagerToPlayer::SetSide(new_side) => {
+                        GameManagerToPlayer::Reset(_board, new_side) => {
                             self.side = Some(new_side);
                         },
                         GameManagerToPlayer::OpponentPutToken(_) => {},

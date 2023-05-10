@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 
 use std::rc::Rc;
 use std::cmp::Ordering;
+use std::vec::Vec;
 
 use ordered_float::OrderedFloat;
 use connect4::game::{CoordsXZ, Side, ROW_SIZE};
@@ -36,6 +37,7 @@ pub struct Window3D {
     font: Rc<Font>,
     camera: ArcBall,
 
+    tokens: Vec<SceneNode>,
     pole_pointer: SceneNode,
 
     coord_sender: Option<mpsc::Sender<CoordsXZ>>,
@@ -72,6 +74,7 @@ impl Window3D {
             w,
             font: Font::default(),
             camera,
+            tokens: vec![],
             pole_pointer,
             coord_sender: None,
             mouse_down: false,
@@ -219,13 +222,32 @@ impl Window3D {
                 Err(_) => return,
             };
 
+            println!("hey received from GM: {:?}", &msg);
+
             match msg {
                 GameManagerToUI::SetToken(side, coords) => {
                     self.add_token(side, coords.x, coords.y, coords.z);
-                }
-            }
+                },
+                GameManagerToUI::ResetBoard(board) => {
+                    for token in &mut self.tokens {
+                        token.unlink();
+                    }
 
-            println!("hey received from GM: {:?}", &msg);
+                    self.tokens.clear();
+
+                    // TODO: reimplement as an iterator exposed by the board.
+                    for x in 0..ROW_SIZE {
+                        for y in 0..ROW_SIZE {
+                            for z in 0..ROW_SIZE {
+                                if let Some(side) = board.get(x, y, z) {
+                                    self.add_token(side, x, y, z);
+                                }
+                            }
+                        }
+                    }
+                    //self.add_token(side, coords.x, coords.y, coords.z);
+                },
+            }
         }
     }
 
@@ -367,6 +389,8 @@ impl Window3D {
         let c = Self::color_by_side(side);
         s.set_color(c.0, c.1, c.2);
         s.set_local_translation(Self::token_translation(x, y, z));
+
+        self.tokens.push(s);
     }
 
     fn color_by_side(side: Side) -> (f32, f32, f32) {
