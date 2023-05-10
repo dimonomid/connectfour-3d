@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{GameManagerToPlayer, PlayerGameState, PlayerState, PlayerToGameManager};
+use super::{GameManagerToPlayer, PlayerGameState, PlayerState, PlayerToGameManager, FullGameState};
 use crate::game;
 
 use tokio::sync::mpsc;
@@ -25,6 +25,8 @@ pub struct PlayerLocal {
 }
 
 impl PlayerLocal {
+    /// If side is set, PlayerLocal will assume it's the primary player, and will generate the
+    /// initial update to set up an empty board.
     pub fn new(
         side: Option<game::Side>,
         from_gm: mpsc::Receiver<GameManagerToPlayer>,
@@ -47,7 +49,11 @@ impl PlayerLocal {
     pub async fn run(&mut self) -> Result<()> {
         if let Some(side) = self.side {
             self.to_gm
-                .send(PlayerToGameManager::SetSide(side))
+                .send(PlayerToGameManager::SetFullGameState(FullGameState{
+                    primary_player_side: side,
+                    board: game::BoardState::new(),
+                    next_move_side: side,
+                }))
                 .await?;
         }
 

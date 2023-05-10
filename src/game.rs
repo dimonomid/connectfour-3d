@@ -7,6 +7,7 @@ pub struct Game {
     board: BoardState,
 }
 
+#[derive(Debug)]
 pub struct BoardState {
     tokens: Vec<Option<Side>>,
 }
@@ -79,7 +80,7 @@ impl Game {
 }
 
 impl BoardState {
-    fn new() -> BoardState {
+    pub fn new() -> BoardState {
         BoardState {
             tokens: vec![None; ROW_SIZE * ROW_SIZE * ROW_SIZE],
         }

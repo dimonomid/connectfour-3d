@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 pub struct GameManager {
     game: game::Game,
-    cur_side: Option<game::Side>,
+    next_move_side: Option<game::Side>,
 
     to_ui: mpsc::Sender<GameManagerToUI>,
     players: [PlayerCtx; 2],
@@ -47,7 +47,7 @@ impl GameManager {
 
         GameManager {
             game: game::Game::new(),
-            cur_side: None,
+            next_move_side: None,
 
             to_ui,
             players: [p0, p1],
@@ -71,20 +71,20 @@ impl GameManager {
     }
 
     pub async fn upd_player_turns(&mut self) -> Result<()> {
-        let cur_side = match self.cur_side {
+        let next_move_side = match self.next_move_side {
             Some(side) => side,
             None => {
                 return Err(anyhow!("no current side"));
             }
         };
 
-        self.player_by_side(cur_side)?
+        self.player_by_side(next_move_side)?
             .to
             .send(GameManagerToPlayer::GameState(PlayerGameState::YourTurn))
             .await
-            .context(format!("player {:?}", cur_side))?;
+            .context(format!("player {:?}", next_move_side))?;
 
-        let opposite_side = cur_side.opposite();
+        let opposite_side = next_move_side.opposite();
         self.player_by_side(opposite_side)?
             .to
             .send(GameManagerToPlayer::GameState(
@@ -105,19 +105,21 @@ impl GameManager {
         Ok(())
     }
 
-    async fn handle_player_set_side(&mut self, i: usize, side: game::Side) -> Result<()> {
+    async fn handle_full_game_state(&mut self, i: usize, fgstate: FullGameState) -> Result<()> {
         if i != 0 {
-            println!("player {} is not primary, so ignoring its side update ({:?})", i, side);
+            println!("player {} is not primary, so ignoring its FullGameState update ({:?})", i, fgstate);
             return Ok(());
         }
 
         // Remember state for the player which sent us the update.
-        self.players[i].side = Some(side);
+        self.players[i].side = Some(fgstate.primary_player_side);
 
-        // Let opponent know about its side as well.
-        let opposite_side = side.opposite();
+        // Update it for the opponent as well.
+        let opposite_side = fgstate.primary_player_side.opposite();
         let opponent_idx = Self::opponent_idx(i);
         self.players[opponent_idx].side = Some(opposite_side);
+
+        // And let opponent know about its (potentially new) side.
         let opponent = &self.players[opponent_idx];
         opponent
             .to
@@ -125,8 +127,9 @@ impl GameManager {
             .await
             .context(format!("setting player {} side to {:?}", opponent_idx, opposite_side))?;
 
-        println!("sides are known: {}: {:?}, {}: {:?}, gonna start", i, side, opponent_idx, opposite_side);
-        self.cur_side = Some(game::Side::White);
+        println!("game state is known, gonna start: {}: {:?}, {}: {:?}, gonna start", i, fgstate.primary_player_side, opponent_idx, opposite_side);
+        // TODO: update board state
+        self.next_move_side = Some(fgstate.next_move_side);
         self.upd_player_turns().await.context("initial update")?;
 
         Ok(())
@@ -163,8 +166,8 @@ impl GameManager {
 
     pub async fn handle_player_msg(&mut self, i: usize, msg: PlayerToGameManager) -> Result<()> {
         match msg {
-            PlayerToGameManager::SetSide(side) => {
-                self.handle_player_set_side(i, side).await?;
+            PlayerToGameManager::SetFullGameState(fgstate) => {
+                self.handle_full_game_state(i, fgstate).await?;
                 Ok(())
             }
             PlayerToGameManager::StateChanged(state) => {
@@ -187,7 +190,7 @@ impl GameManager {
 
         println!("GM: player {:?} put token {:?}", side, coords);
 
-        let cur_side = match self.cur_side {
+        let next_move_side = match self.next_move_side {
             None => {
                 println!("no current side, but player put token");
                 self.upd_player_turns().await?;
@@ -205,8 +208,8 @@ impl GameManager {
             Some(side) => side,
         };
 
-        if player_side != cur_side {
-            println!("wrong side: {:?}, waiting for {:?}", player_side, cur_side);
+        if player_side != next_move_side {
+            println!("wrong side: {:?}, waiting for {:?}", player_side, next_move_side);
             self.upd_player_turns().await?;
             return Ok(());
         }
@@ -233,7 +236,7 @@ impl GameManager {
             .await
             .context("updating UI")?;
 
-        self.cur_side = Some(cur_side.opposite());
+        self.next_move_side = Some(next_move_side.opposite());
         self.upd_player_turns().await?;
 
         Ok(())
@@ -248,6 +251,19 @@ pub enum PlayerGameState {
     YourTurn,
     OpponentWon,
     YouWon,
+}
+
+#[derive(Debug)]
+pub struct FullGameState {
+    /// Side of the primary player (the one who sends PlayerToGameManager::SetFullGameState with
+    /// this full state).
+    pub primary_player_side: game::Side,
+
+    /// Full board state.
+    pub board: game::BoardState,
+
+    /// Who should make the next move.
+    pub next_move_side: game::Side,
 }
 
 /// Player state from the point of view of the GameManager.
@@ -269,10 +285,9 @@ pub enum GameManagerToPlayer {
 /// Message that a player can send to GameManager.
 #[derive(Debug)]
 pub enum PlayerToGameManager {
-    /// Set side of this player. GameManager will correspondingly update the side of the opponent
-    /// player as well. Only primary player can send SetSide messages; if secondary player does
-    /// this, GameManager will just ignore it.
-    SetSide(game::Side),
+    /// Overwrite full game state. Only primary player can send SetSide messages; if secondary
+    /// player does this, GameManager will just ignore it.
+    SetFullGameState(FullGameState),
     StateChanged(PlayerState),
     PutToken(game::CoordsXZ),
 }
