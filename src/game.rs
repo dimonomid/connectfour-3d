@@ -7,9 +7,9 @@ pub struct Game {
     board: BoardState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct BoardState {
-    tokens: Vec<Option<Side>>,
+    pub tokens: Vec<Option<Side>>,
 }
 
 pub struct PutResult {
@@ -20,7 +20,7 @@ pub struct PutResult {
     pub won: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Side {
     Black,
     White,

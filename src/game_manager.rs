@@ -1,4 +1,5 @@
 pub mod player_local;
+pub mod player_ws_client;
 
 use super::game;
 use anyhow::{anyhow, Context, Result};
@@ -253,7 +254,7 @@ pub enum PlayerGameState {
     YouWon,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct FullGameState {
     /// Side of the primary player (the one who sends PlayerToGameManager::SetFullGameState with
     /// this full state).

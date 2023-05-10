@@ -34,9 +34,9 @@ impl Registry {
         {
             let m = self.game_by_name.read().await;
             match m.get(game_id) {
-                // If the game already exists, check how many players are there. If both are there,
-                // error out; otherwise, add the new player and return the game.
                 Some(v) => {
+                    // The game already exists, check how many players are there. If both are
+                    // there, error out; otherwise, add the new player and return the game.
                     let gc = v.clone();
                     let mut gd = gc.data.lock().await;
 
