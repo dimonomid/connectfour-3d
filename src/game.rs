@@ -40,13 +40,13 @@ pub struct CoordsXZ {
 
 impl CoordsXZ {
     pub fn new(x: usize, z: usize) -> CoordsXZ {
-        CoordsXZ{ x, z }
+        CoordsXZ { x, z }
     }
 }
 
 impl Game {
     pub fn new() -> Game {
-        Game{
+        Game {
             board: BoardState::new(),
         }
     }
@@ -58,14 +58,14 @@ impl Game {
             match self.board.get(x, y, z) {
                 None => {
                     self.board.set(side, x, y, z);
-                    return Ok(PutResult{
+                    return Ok(PutResult {
                         y: y,
                         won: false, // TODO
-                    })
+                    });
                 }
 
                 // Token already exists, gonna try next spot (if any).
-                Some(_) => continue 
+                Some(_) => continue,
             }
         }
 
@@ -80,7 +80,7 @@ impl Game {
 
 impl BoardState {
     fn new() -> BoardState {
-        BoardState{
+        BoardState {
             tokens: vec![None; ROW_SIZE * ROW_SIZE * ROW_SIZE],
         }
     }

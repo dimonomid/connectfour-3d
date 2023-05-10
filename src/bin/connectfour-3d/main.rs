@@ -5,6 +5,7 @@ use std::thread;
 use tokio::sync::mpsc;
 use tokio::{task};
 
+use connect4::game::{Side};
 use connect4::game_manager::{
     GameManager, GameManagerToPlayer, GameManagerToUI,
     PlayerToGameManager,
@@ -49,6 +50,7 @@ fn async_runtime(
 
         set.spawn(async {
             let mut pwhite = PlayerLocal::new(
+                Some(Side::White),
                 gm_to_pwhite_rx,
                 pwhite_to_gm_tx,
                 pwhite_to_ui_tx,
@@ -60,6 +62,7 @@ fn async_runtime(
 
         set.spawn(async {
             let mut pblack = PlayerLocal::new(
+                None,
                 gm_to_pblack_rx,
                 pblack_to_gm_tx,
                 pblack_to_ui_tx,

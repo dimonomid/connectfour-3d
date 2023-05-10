@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{GameManagerToPlayer, PlayerGameState, PlayerToGameManager};
+use super::{GameManagerToPlayer, PlayerGameState, PlayerState, PlayerToGameManager};
 use crate::game;
 
 use tokio::sync::mpsc;
@@ -26,6 +26,7 @@ pub struct PlayerLocal {
 
 impl PlayerLocal {
     pub fn new(
+        side: Option<game::Side>,
         from_gm: mpsc::Receiver<GameManagerToPlayer>,
         to_gm: mpsc::Sender<PlayerToGameManager>,
         to_ui: mpsc::Sender<PlayerLocalToUI>,
@@ -34,7 +35,7 @@ impl PlayerLocal {
         let (coords_from_ui_sender, coords_from_ui_receiver) = mpsc::channel::<game::CoordsXZ>(1);
 
         PlayerLocal {
-            side: None,
+            side: side,
             from_gm,
             to_gm,
             to_ui,
@@ -44,13 +45,28 @@ impl PlayerLocal {
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        // If we knew our side from the beginning, let GameManager know immediately.
+        self.update_state_if_ready().await?;
+
         loop {
             tokio::select! {
                 Some(val) = self.from_gm.recv() => {
                     println!("player {:?}: received from GM: {:?}", self.side, val);
 
                     match val {
-                        GameManagerToPlayer::SetSide(side) => { self.side = Some(side); },
+                        GameManagerToPlayer::SetSide(new_side) => {
+                            // GameManager lets us know about our side. If we knew that already,
+                            // then do nothing; otherwise, update the side, and also let
+                            // GameManager know about our updated state.
+                            match self.side {
+                                Some(side) if side == new_side => { continue; }
+                                _ => {
+                                    self.side = Some(new_side);
+                                    self.update_state_if_ready().await?;
+                                },
+                            }
+
+                        },
                         GameManagerToPlayer::OpponentPutToken(_) => {},
                         GameManagerToPlayer::GameState(state) => {
                             self.handle_game_state(state).await?;
@@ -66,6 +82,18 @@ impl PlayerLocal {
         }
     }
 
+    async fn update_state_if_ready(&mut self) -> Result<()> {
+        if let Some(side) = self.side {
+            println!("player {:?}: letting GM know that we're ready", self.side);
+            let state = PlayerState::Ready(side);
+            self.to_gm
+                .send(PlayerToGameManager::StateChanged(state))
+                .await?;
+        }
+
+        Ok(())
+    }
+
     async fn handle_game_state(&mut self, state: PlayerGameState) -> Result<()> {
         match state {
             PlayerGameState::YourTurn => {
@@ -75,16 +103,15 @@ impl PlayerLocal {
                         self.coords_from_ui_sender.clone(),
                     ))
                     .await?;
-            },
+            }
 
             // We don't need to do anything special on any other game state, but still enumerating
             // them all explicitly so that if the enum changes, we're forced by the compiler to
             // revisit this logic.
-
-            PlayerGameState::NoGame => {},
-            PlayerGameState::OpponentsTurn => {},
-            PlayerGameState::OpponentWon => {},
-            PlayerGameState::YouWon => {},
+            PlayerGameState::NoGame => {}
+            PlayerGameState::OpponentsTurn => {}
+            PlayerGameState::OpponentWon => {}
+            PlayerGameState::YouWon => {}
         };
 
         Ok(())
