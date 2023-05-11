@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 
 pub struct GameManager {
     game: game::Game,
-    game_state: GameState,
+    game_state: Option<GameState>,
 
     to_ui: mpsc::Sender<GameManagerToUI>,
     players: [PlayerCtx; 2],
@@ -48,7 +48,7 @@ impl GameManager {
 
         GameManager {
             game: game::Game::new(),
-            game_state: GameState::NotStarted,
+            game_state: None,
 
             to_ui,
             players: [p0, p1],
@@ -74,13 +74,13 @@ impl GameManager {
     pub async fn upd_player_turns(&mut self) -> Result<()> {
         self.players[0]
             .to
-            .send(GameManagerToPlayer::GameState(self.game_state))
+            .send(GameManagerToPlayer::GameState(self.game_state.unwrap()))
             .await
             .context(format!("player 0"))?;
 
         self.players[1]
             .to
-            .send(GameManagerToPlayer::GameState(self.game_state))
+            .send(GameManagerToPlayer::GameState(self.game_state.unwrap()))
             .await
             .context(format!("player 1"))?;
 
@@ -129,7 +129,7 @@ impl GameManager {
 
         println!("game state is known, gonna let players know: {}: {:?}, {}: {:?}", i, fgstate.primary_player_side, opponent_idx, opposite_side);
 
-        self.game_state = fgstate.game_state;
+        self.game_state = Some(fgstate.game_state);
 
         self.upd_player_turns().await.context("initial update")?;
 
@@ -193,13 +193,8 @@ impl GameManager {
 
         println!("GM: player {:?} put token {:?}", side, coords);
 
-        let next_move_side = match self.game_state {
+        let next_move_side = match self.game_state.unwrap() {
             GameState::WaitingFor(side) => side,
-            GameState::NotStarted => {
-                println!("game not started, but player put token");
-                self.upd_player_turns().await?;
-                return Ok(());
-            },
             GameState::WonBy(_) => {
                 println!("game is won, but player put token");
                 self.upd_player_turns().await?;
@@ -244,7 +239,7 @@ impl GameManager {
             .await
             .context("updating UI")?;
 
-        self.game_state = GameState::WaitingFor(next_move_side.opposite());
+        self.game_state = Some(GameState::WaitingFor(next_move_side.opposite()));
         self.upd_player_turns().await?;
 
         Ok(())
@@ -253,7 +248,6 @@ impl GameManager {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum GameState {
-    NotStarted,
     WaitingFor(game::Side),
     WonBy(game::Side),
 }

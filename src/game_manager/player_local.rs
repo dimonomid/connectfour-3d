@@ -112,7 +112,6 @@ impl PlayerLocal {
             // We don't need to do anything special on any other game state, but still enumerating
             // them all explicitly so that if the enum changes, we're forced by the compiler to
             // revisit this logic.
-            GameState::NotStarted => {}
             GameState::WonBy(_) => {}
         };
 
