@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{GameManagerToPlayer, PlayerGameState, PlayerState, PlayerToGameManager, FullGameState};
+use super::{GameManagerToPlayer, GameState, PlayerState, PlayerToGameManager, FullGameState};
 use crate::game;
 
 use tokio::sync::mpsc;
@@ -86,9 +86,19 @@ impl PlayerLocal {
         }
     }
 
-    async fn handle_game_state(&mut self, state: PlayerGameState) -> Result<()> {
+    async fn handle_game_state(&mut self, state: GameState) -> Result<()> {
         match state {
-            PlayerGameState::YourTurn => {
+            GameState::WaitingFor(next_move_side) => {
+                let my_side = match self.side {
+                    Some(side) => side,
+                    None => { return Ok(()); }
+                };
+
+                if my_side != next_move_side {
+                    return Ok(());
+                }
+
+                // It's our turn, so request input from the UI.
                 self.to_ui
                     .send(PlayerLocalToUI::RequestInput(
                         self.side.unwrap(),
@@ -100,10 +110,8 @@ impl PlayerLocal {
             // We don't need to do anything special on any other game state, but still enumerating
             // them all explicitly so that if the enum changes, we're forced by the compiler to
             // revisit this logic.
-            PlayerGameState::NoGame => {}
-            PlayerGameState::OpponentsTurn => {}
-            PlayerGameState::OpponentWon => {}
-            PlayerGameState::YouWon => {}
+            GameState::NotStarted => {}
+            GameState::WonBy(_) => {}
         };
 
         Ok(())

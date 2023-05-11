@@ -2,7 +2,7 @@ pub mod player_local;
 pub mod player_ws_client;
 
 use super::game;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 
 use tokio::sync::mpsc;
 
@@ -72,44 +72,17 @@ impl GameManager {
     }
 
     pub async fn upd_player_turns(&mut self) -> Result<()> {
-        match self.game_state {
-            GameState::NotStarted => {},
-            GameState::WaitingFor(next_move_side) => {
-                self.player_by_side(next_move_side)?
-                    .to
-                    .send(GameManagerToPlayer::GameState(PlayerGameState::YourTurn))
-                    .await
-                    .context(format!("player {:?}", next_move_side))?;
+        self.players[0]
+            .to
+            .send(GameManagerToPlayer::GameState(self.game_state))
+            .await
+            .context(format!("player 0"))?;
 
-                let opposite_side = next_move_side.opposite();
-                self.player_by_side(opposite_side)?
-                    .to
-                    .send(GameManagerToPlayer::GameState(
-                        PlayerGameState::OpponentsTurn,
-                    ))
-                    .await
-                    .context(format!("player {:?}", opposite_side))?;
-
-            },
-
-            GameState::WonBy(winning_side) => {
-                self.player_by_side(winning_side)?
-                    .to
-                    .send(GameManagerToPlayer::GameState(PlayerGameState::YouWon))
-                    .await
-                    .context(format!("player {:?}", winning_side))?;
-
-                let opposite_side = winning_side.opposite();
-                self.player_by_side(opposite_side)?
-                    .to
-                    .send(GameManagerToPlayer::GameState(
-                        PlayerGameState::OpponentWon,
-                    ))
-                    .await
-                    .context(format!("player {:?}", opposite_side))?;
-
-            },
-        };
+        self.players[1]
+            .to
+            .send(GameManagerToPlayer::GameState(self.game_state))
+            .await
+            .context(format!("player 1"))?;
 
         Ok(())
     }
@@ -180,6 +153,7 @@ impl GameManager {
         }
     }
 
+    /*
     fn player_by_side(&self, side: game::Side) -> Result<&PlayerCtx> {
         match self.players[0].side {
             Some(v) => {
@@ -192,6 +166,7 @@ impl GameManager {
             None => Err(anyhow!("player 0 doesn't have a side")),
         }
     }
+    */
 
     pub async fn handle_player_msg(&mut self, i: usize, msg: PlayerToGameManager) -> Result<()> {
         match msg {
@@ -277,21 +252,11 @@ impl GameManager {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum GameState {
     NotStarted,
     WaitingFor(game::Side),
     WonBy(game::Side),
-}
-
-/// Game state from the point of view of a particular player.
-/// TODO: remove it, GameState should be enough.
-#[derive(Debug, Eq, PartialEq)]
-pub enum PlayerGameState {
-    NoGame,
-    OpponentsTurn,
-    YourTurn,
-    OpponentWon,
-    YouWon,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -320,7 +285,7 @@ pub enum PlayerState {
 pub enum GameManagerToPlayer {
     Reset(game::BoardState, game::Side),
     OpponentPutToken(game::CoordsXZ),
-    GameState(PlayerGameState),
+    GameState(GameState),
 }
 
 /// Message that a player can send to GameManager.
