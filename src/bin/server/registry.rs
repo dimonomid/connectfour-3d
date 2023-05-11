@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use tokio::sync::mpsc;
-use connect4::game_manager::GameState;
-use connect4::game;
-use connect4::{WSFullGameState};
+use connectfour::game_manager::GameState;
+use connectfour::game;
+use connectfour::{WSFullGameState};
 
 pub struct Registry {
     game_by_name: RwLock<HashMap<String, Arc<GameCtx>>>,

@@ -13,9 +13,9 @@ use std::cmp::Ordering;
 use std::vec::Vec;
 
 use ordered_float::OrderedFloat;
-use connect4::game::{CoordsXZ, Side, ROW_SIZE};
-use connect4::game_manager::{GameManagerToUI, PlayerState};
-use connect4::game_manager::player_local::{PlayerLocalToUI};
+use connectfour::game::{CoordsXZ, Side, ROW_SIZE};
+use connectfour::game_manager::{GameManagerToUI, PlayerState};
+use connectfour::game_manager::player_local::{PlayerLocalToUI};
 use super::OpponentKind;
 
 const POLE_WIDTH: f32 = 1.0;

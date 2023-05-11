@@ -16,9 +16,9 @@ use tokio::{time};
 
 use registry::{Registry, GameCtx};
 
-use connect4::{WSClientToServer, WSServerToClient, WSFullGameState, GameReset};
-use connect4::game;
-use connect4::game_manager::GameState;
+use connectfour::{WSClientToServer, WSServerToClient, WSFullGameState, GameReset};
+use connectfour::game;
+use connectfour::game_manager::GameState;
 use registry::PlayerToPlayer;
 
 #[tokio::main]

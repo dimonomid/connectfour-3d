@@ -6,13 +6,13 @@ use std::env;
 use tokio::sync::mpsc;
 use tokio::{task};
 
-use connect4::game::{Side};
-use connect4::game_manager::{
+use connectfour::game::{Side};
+use connectfour::game_manager::{
     GameManager, GameManagerToPlayer, GameManagerToUI,
     PlayerToGameManager,
 };
-use connect4::game_manager::player_local::{PlayerLocal, PlayerLocalToUI};
-use connect4::game_manager::player_ws_client::{PlayerWSClient};
+use connectfour::game_manager::player_local::{PlayerLocal, PlayerLocalToUI};
+use connectfour::game_manager::player_ws_client::{PlayerWSClient};
 
 fn main() {
     let opponent_kind_str = env::args().nth(1).unwrap_or_else(|| "network".to_string());
