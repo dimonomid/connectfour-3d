@@ -17,6 +17,8 @@ use tokio::{time};
 use registry::{Registry, GameCtx};
 
 use connect4::{WSClientToServer, WSServerToClient, WSFullGameState, GameReset};
+use connect4::game;
+use connect4::game_manager::GameState;
 use registry::PlayerToPlayer;
 
 #[tokio::main]
@@ -104,6 +106,7 @@ async fn handle_player(
 
     let mut ping_interval = time::interval(Duration::from_millis(5000));
     let mut maybe_to_opponent: Option<mpsc::Sender<PlayerToPlayer>> = None;
+    let mut side = game::Side::White;
 
     loop {
         tokio::select! {
@@ -136,14 +139,15 @@ async fn handle_player(
                 match val {
                     PlayerToPlayer::OpponentIsHere(v) => {
                         maybe_to_opponent = Some(v.to_opponent);
+                        side = v.my_side;
 
                         let mut gd = game_ctx.data.lock().await;
                         let game_reset = WSServerToClient::GameReset(GameReset{
                             opponent_name: Arc::new("my opponent".to_string()), // TODO: actual name
                             game_state: Arc::new(WSFullGameState{
                                 game_state: gd.game_state,
-                                ws_player_side: v.my_side,
-                                board: gd.board.clone(),
+                                ws_player_side: side,
+                                board: gd.game.get_board().clone(),
                             }),
                         });
 
@@ -156,6 +160,11 @@ async fn handle_player(
 
                     PlayerToPlayer::PutToken(coords) => {
                         println!("received PutToken({:?})", coords);
+
+                        let mut gd = game_ctx.data.lock().await;
+                        gd.game.put_token(side, coords.x, coords.z);
+                        gd.game_state = GameState::WaitingFor(side.opposite());
+                        drop(gd);
 
                         let put_token = WSServerToClient::PutToken(coords);
                         let j = serde_json::to_string(&put_token)?;

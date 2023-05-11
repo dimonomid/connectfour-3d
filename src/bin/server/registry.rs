@@ -22,7 +22,7 @@ pub struct GameData {
 
     pub game_state: GameState,
     pub player_pri_side: game::Side,
-    pub board: game::BoardState,
+    pub game: game::Game,
 }
 
 struct Player {
@@ -185,7 +185,7 @@ impl GameCtx {
 
                 game_state: GameState::WaitingFor(game::Side::White),
                 player_pri_side: game::Side::White,
-                board: game::BoardState::new(),
+                game: game::Game::new(),
             }),
         }
     }
@@ -208,6 +208,7 @@ impl GameData {
 
     fn sec_to_pri(&mut self) {
         std::mem::swap(&mut self.player_pri, &mut self.player_sec);
+        self.player_pri_side = self.player_pri_side.opposite();
         self.player_sec = None;
     }
 }
