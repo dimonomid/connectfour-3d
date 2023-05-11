@@ -48,7 +48,8 @@ impl PlayerLocal {
 
     pub async fn run(&mut self) -> Result<()> {
         // If the PlayerLocal was constructed with the side right away (which has to be done if the
-        // player is a primary one), then set the initial game state to the GameManager.
+        // player is a primary one), then set the initial game state to the GameManager,
+        // saying that it's our turn, with an empty board.
         if let Some(side) = self.side {
             self.to_gm
                 .send(PlayerToGameManager::SetFullGameState(FullGameState{

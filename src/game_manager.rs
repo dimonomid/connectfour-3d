@@ -252,7 +252,7 @@ pub enum GameState {
     WonBy(game::Side),
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug)]
 pub struct FullGameState {
     pub game_state: GameState,
 

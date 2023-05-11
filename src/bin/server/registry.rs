@@ -8,7 +8,8 @@ pub struct Registry {
 }
 
 pub struct GameCtx {
-    id: String,
+    // TODO: make it non-public
+    pub id: String,
     data: Mutex<GameData>,
 }
 

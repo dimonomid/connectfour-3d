@@ -5,12 +5,13 @@ use std::thread;
 use tokio::sync::mpsc;
 use tokio::{task};
 
-use connect4::game::{Side};
+//use connect4::game::{Side};
 use connect4::game_manager::{
     GameManager, GameManagerToPlayer, GameManagerToUI,
     PlayerToGameManager,
 };
 use connect4::game_manager::player_local::{PlayerLocal, PlayerLocalToUI};
+use connect4::game_manager::player_ws_client::{PlayerWSClient};
 
 fn main() {
     let (gm_to_ui_sender, gm_to_ui_receiver) = mpsc::channel::<GameManagerToUI>(16);
@@ -34,7 +35,7 @@ fn async_runtime(
     player_to_ui_tx: mpsc::Sender<PlayerLocalToUI>,
 ) {
     // Every player will need a copy of the sender, so clone it.
-    let pwhite_to_ui_tx = player_to_ui_tx.clone();
+    let _pwhite_to_ui_tx = player_to_ui_tx.clone();
     let pblack_to_ui_tx = player_to_ui_tx;
 
     // For both players, create channels for bidirectional communication with the GameManager.
@@ -49,12 +50,21 @@ fn async_runtime(
         let mut set = task::JoinSet::new();
 
         set.spawn(async {
-            let mut pwhite = PlayerLocal::new(
-                Some(Side::White),
+            //let mut pwhite = PlayerLocal::new(
+                //Some(Side::White),
+                //gm_to_pwhite_rx,
+                //pwhite_to_gm_tx,
+                //pwhite_to_ui_tx,
+            //);
+
+            let connect_addr = "ws://127.0.0.1:7248";
+            let conn_url = url::Url::parse(&connect_addr).unwrap();
+            let mut pwhite = PlayerWSClient::new(
+                conn_url,
                 gm_to_pwhite_rx,
                 pwhite_to_gm_tx,
-                pwhite_to_ui_tx,
             );
+
             pwhite.run().await?;
 
             Ok::<(), anyhow::Error>(())
