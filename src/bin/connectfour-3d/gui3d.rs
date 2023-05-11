@@ -16,6 +16,7 @@ use ordered_float::OrderedFloat;
 use connect4::game::{CoordsXZ, Side, ROW_SIZE};
 use connect4::game_manager::{GameManagerToUI, PlayerState};
 use connect4::game_manager::player_local::{PlayerLocalToUI};
+use super::OpponentKind;
 
 const POLE_WIDTH: f32 = 1.0;
 const TOKEN_D_TO_HEIGHT: f32 = 0.8;
@@ -58,8 +59,7 @@ impl Window3D {
     pub fn new(
         from_gm: mpsc::Receiver<GameManagerToUI>,
         from_players: mpsc::Receiver<PlayerLocalToUI>,
-        p0_name: String,
-        p1_name: String,
+        opponent_kind: OpponentKind,
     ) -> Window3D {
         let mut w = Window::new("ConnectFour 3D");
         w.set_light(Light::StickToCamera);
@@ -73,6 +73,20 @@ impl Window3D {
         // hovers a pole.
         let mut pole_pointer = w.add_sphere(POINTER_RADIUS);
         pole_pointer.set_visible(false);
+
+        let p0_name;
+        let p1_name;
+
+        match opponent_kind {
+            OpponentKind::Local => {
+                p0_name = "local";
+                p1_name = "local";
+            },
+            OpponentKind::Network => {
+                p0_name = "network";
+                p1_name = "local (you)";
+            },
+        }
 
         let mut window = Window3D {
             w,
@@ -88,12 +102,12 @@ impl Window3D {
             last_pos: Point2::new(0.0f32, 0.0f32),
             players: [
                 PlayerInfo{
-                    name: p0_name,
+                    name: p0_name.to_string(),
                     state: PlayerState::NotReady("-".to_string()),
                     side: None,
                 },
                 PlayerInfo{
-                    name: p1_name,
+                    name: p1_name.to_string(),
                     state: PlayerState::NotReady("-".to_string()),
                     side: None,
                 },
@@ -128,9 +142,6 @@ impl Window3D {
 
     fn handle_event(&mut self, event: &Event) {
         match event.value {
-            //WindowEvent::FramebufferSize(x, y) => {
-            //println!("frame buffer size event {}, {}", x, y);
-            //}
             WindowEvent::MouseButton(_btn, Action::Press, _modif) => {
                 self.mouse_down = true;
             }
@@ -175,9 +186,6 @@ impl Window3D {
                     }
                 }
             }
-            //WindowEvent::Key(key, action, modif) => {
-            //println!("key event {:?} on {:?} with {:?}", key, action, modif);
-            //}
             WindowEvent::CursorPos(x, y, _modif) => {
                 self.last_pos = Point2::new(x as f32, y as f32);
                 if self.mouse_down {
@@ -185,15 +193,7 @@ impl Window3D {
                 }
 
                 self.update_pole_pointer();
-
-                //println!(
-                //"conv {:?},{:?} to {:?}",
-                //x, y, v,
-                //);
             }
-            //WindowEvent::Close => {
-            //println!("close event");
-            //}
             _ => {}
         }
     }
@@ -324,7 +324,7 @@ impl Window3D {
             &Point2::new(0.0, 0.0),
             40.0,
             &self.font,
-            &Point3::new(0.0, 1.0, 1.0),
+            &Point3::new(0.0, 1.0, 0.0),
         );
 
         self.w.draw_text(
@@ -332,7 +332,7 @@ impl Window3D {
             &Point2::new(0.0, 50.0),
             40.0,
             &self.font,
-            &Point3::new(0.0, 1.0, 1.0),
+            &Point3::new(0.0, 1.0, 0.0),
         );
 
         true

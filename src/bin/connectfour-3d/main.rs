@@ -1,11 +1,12 @@
 mod gui3d;
 
 use std::thread;
+use std::env;
 
 use tokio::sync::mpsc;
 use tokio::{task};
 
-//use connect4::game::{Side};
+use connect4::game::{Side};
 use connect4::game_manager::{
     GameManager, GameManagerToPlayer, GameManagerToUI,
     PlayerToGameManager,
@@ -14,15 +15,26 @@ use connect4::game_manager::player_local::{PlayerLocal, PlayerLocalToUI};
 use connect4::game_manager::player_ws_client::{PlayerWSClient};
 
 fn main() {
+    let opponent_kind_str = env::args().nth(1).unwrap_or_else(|| "network".to_string());
+
+    let opponent_kind = match opponent_kind_str.as_str() {
+        "local" => OpponentKind::Local,
+        "network" => OpponentKind::Network,
+        _ => {
+            println!("Wrong opponent kind, try local or remote");
+            std::process::exit(1);
+        },
+    };
+
     let (gm_to_ui_sender, gm_to_ui_receiver) = mpsc::channel::<GameManagerToUI>(16);
     let (player_to_ui_tx, player_to_ui_rx) = mpsc::channel::<PlayerLocalToUI>(1);
 
     // Setup tokio runtime in another thread.
-    thread::spawn(move || async_runtime(gm_to_ui_sender, player_to_ui_tx));
+    thread::spawn(move || async_runtime(gm_to_ui_sender, player_to_ui_tx, opponent_kind));
 
     // Run GUI in the main thread. It's easier since when the user closes the window, the whole
     // thing gets killed (albeit not yet gracefully).
-    let mut w = gui3d::Window3D::new(gm_to_ui_receiver, player_to_ui_rx, "network".to_string(), "local (you)".to_string());
+    let mut w = gui3d::Window3D::new(gm_to_ui_receiver, player_to_ui_rx, opponent_kind);
     w.run();
 
     // GUI window was closed by the user.
@@ -33,9 +45,10 @@ fn main() {
 fn async_runtime(
     gm_to_ui_sender: mpsc::Sender<GameManagerToUI>,
     player_to_ui_tx: mpsc::Sender<PlayerLocalToUI>,
+    opponent_kind: OpponentKind,
 ) {
     // Every player will need a copy of the sender, so clone it.
-    let _pwhite_to_ui_tx = player_to_ui_tx.clone();
+    let pwhite_to_ui_tx = player_to_ui_tx.clone();
     let pblack_to_ui_tx = player_to_ui_tx;
 
     // For both players, create channels for bidirectional communication with the GameManager.
@@ -49,35 +62,40 @@ fn async_runtime(
     rt.block_on(async {
         let mut set = task::JoinSet::new();
 
-        set.spawn(async {
-            //let mut pwhite = PlayerLocal::new(
-                //Some(Side::White),
-                //gm_to_pwhite_rx,
-                //pwhite_to_gm_tx,
-                //pwhite_to_ui_tx,
-            //);
-
-            let connect_addr = "ws://127.0.0.1:7248";
-            let conn_url = url::Url::parse(&connect_addr).unwrap();
-            let mut pwhite = PlayerWSClient::new(
-                conn_url,
-                gm_to_pwhite_rx,
-                pwhite_to_gm_tx,
-            );
-
-            pwhite.run().await?;
+        set.spawn(async move {
+            match opponent_kind {
+                OpponentKind::Local => {
+                    let mut p0 = PlayerLocal::new(
+                        Some(Side::White),
+                        gm_to_pwhite_rx,
+                        pwhite_to_gm_tx,
+                        pwhite_to_ui_tx,
+                    );
+                    p0.run().await?;
+                },
+                OpponentKind::Network => {
+                    let connect_addr = "ws://127.0.0.1:7248";
+                    let conn_url = url::Url::parse(&connect_addr).unwrap();
+                    let mut p0 = PlayerWSClient::new(
+                        conn_url,
+                        gm_to_pwhite_rx,
+                        pwhite_to_gm_tx,
+                    );
+                    p0.run().await?;
+                },
+            }
 
             Ok::<(), anyhow::Error>(())
         });
 
         set.spawn(async {
-            let mut pblack = PlayerLocal::new(
+            let mut p1 = PlayerLocal::new(
                 None,
                 gm_to_pblack_rx,
                 pblack_to_gm_tx,
                 pblack_to_ui_tx,
             );
-            pblack.run().await?;
+            p1.run().await?;
 
             Ok::<(), anyhow::Error>(())
         });
@@ -111,4 +129,11 @@ fn async_runtime(
             }
         }
     })
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum OpponentKind {
+    Local,
+    Network,
+    // TODO: AI
 }
