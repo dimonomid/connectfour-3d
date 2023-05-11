@@ -185,6 +185,8 @@ impl Window3D {
                         println!("failed sending coords to the player: {}", err);
                     }
                 }
+
+                self.update_pole_pointer();
             }
             WindowEvent::CursorPos(x, y, _modif) => {
                 self.last_pos = Point2::new(x as f32, y as f32);
