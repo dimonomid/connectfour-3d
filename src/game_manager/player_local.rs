@@ -22,8 +22,6 @@ pub struct PlayerLocal {
 
     coords_from_ui_sender: mpsc::Sender<game::CoordsXZ>,
     coords_from_ui_receiver: mpsc::Receiver<game::CoordsXZ>,
-
-    waiting_for_ui: bool,
 }
 
 impl PlayerLocal {
@@ -45,7 +43,6 @@ impl PlayerLocal {
             to_ui,
             coords_from_ui_sender,
             coords_from_ui_receiver,
-            waiting_for_ui: false,
         }
     }
 
@@ -86,7 +83,6 @@ impl PlayerLocal {
 
                 Some(coords) = self.coords_from_ui_receiver.recv() => {
                     println!("got coords from UI: {:?}", &coords);
-                    self.waiting_for_ui = false;
                     self.to_gm.send(PlayerToGameManager::PutToken(coords)).await?;
                 }
             }
@@ -105,11 +101,6 @@ impl PlayerLocal {
                     return Ok(());
                 }
 
-                // If we're already waiting for UI, do nothing.
-                if self.waiting_for_ui {
-                    return Ok(());
-                }
-
                 // It's our turn, so request input from the UI.
                 self.to_ui
                     .send(PlayerLocalToUI::RequestInput(
@@ -117,8 +108,6 @@ impl PlayerLocal {
                         self.coords_from_ui_sender.clone(),
                     ))
                     .await?;
-
-                self.waiting_for_ui = true;
             }
 
             // We don't need to do anything special on any other game state, but still enumerating

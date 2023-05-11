@@ -77,7 +77,7 @@ impl Game {
 
                     return Ok(PutResult {
                         y: y,
-                        won: false, // TODO
+                        won: !self.win_row.is_none(),
                     });
                 }
 
