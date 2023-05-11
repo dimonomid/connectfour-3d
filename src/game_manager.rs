@@ -263,6 +263,11 @@ impl GameManager {
 
         if res.won {
             self.game_state = Some(GameState::WonBy(next_move_side));
+
+            self.to_ui
+                .send(GameManagerToUI::WinRow(self.game.get_win_row().unwrap()))
+                .await
+                .context("updating UI")?;
         } else {
             self.game_state = Some(GameState::WaitingFor(opposite_side));
         }
@@ -324,4 +329,5 @@ pub enum GameManagerToUI {
     PlayerStateChanged(usize, PlayerState),
     PlayerSidesChanged(game::Side, game::Side),
     GameStateChanged(GameState),
+    WinRow(game::WinRow),
 }

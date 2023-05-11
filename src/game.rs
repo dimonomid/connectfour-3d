@@ -10,6 +10,7 @@ pub struct Game {
     win_row: Option<WinRow>,
 }
 
+#[derive(Debug, Clone)]
 pub struct WinRow {
     pub side: Side,
     pub row: [CoordsFull; ROW_SIZE],
@@ -104,6 +105,10 @@ impl Game {
 
         self.board.copy_from(board);
         self.win_row = self.check_win();
+    }
+
+    pub fn get_win_row(&self) -> Option<WinRow> {
+        self.win_row.clone()
     }
 
     fn check_win(&self) -> Option<WinRow> {
@@ -243,6 +248,8 @@ impl Game {
             let coords = coord_getter(i);
             match self.get_token(coords.x, coords.y, coords.z) {
                 Some(side) => {
+                    row[i] = coords;
+
                     if i == 0 {
                         row_side = Some(side);
                         continue;

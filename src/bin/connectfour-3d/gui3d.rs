@@ -11,9 +11,10 @@ use tokio::sync::mpsc;
 use std::rc::Rc;
 use std::cmp::Ordering;
 use std::vec::Vec;
+use std::time::{Duration, Instant};
 
 use ordered_float::OrderedFloat;
-use connectfour::game::{CoordsXZ, Side, ROW_SIZE};
+use connectfour::game::{CoordsXZ, Side, WinRow, ROW_SIZE};
 use connectfour::game_manager::{GameManagerToUI, PlayerState, GameState};
 use connectfour::game_manager::player_local::{PlayerLocalToUI};
 use super::OpponentKind;
@@ -33,12 +34,15 @@ const POINTER_RADIUS: f32 = POLE_RADIUS * 0.7;
 // Y coord for a plane which matches tops of all poles.
 const POLES_TOP_Y: f32 = POLE_HEIGHT / 2.0;
 
+const FLASH_DUR_MS: u128 = 200;
+const FLASH_DUR: Duration = Duration::from_millis(FLASH_DUR_MS as u64);
+
 pub struct Window3D {
     w: Window,
     font: Rc<Font>,
     camera: ArcBall,
 
-    tokens: Vec<SceneNode>,
+    tokens: Vec<Option<SceneNode>>,
     pole_pointer: SceneNode,
 
     pending_input: Option<PendingInput>,
@@ -56,6 +60,7 @@ pub struct Window3D {
     opponent_kind: OpponentKind,
 
     game_state: Option<GameState>,
+    win_row: Option<WinRow>,
 }
 
 impl Window3D {
@@ -95,7 +100,7 @@ impl Window3D {
             w,
             font: Font::default(),
             camera,
-            tokens: vec![],
+            tokens: vec![None; ROW_SIZE * ROW_SIZE * ROW_SIZE],
             pole_pointer,
             pending_input: None,
             mouse_down: false,
@@ -117,6 +122,7 @@ impl Window3D {
             ],
             opponent_kind,
             game_state: None,
+            win_row: None,
         };
 
         window.create_frame();
@@ -227,6 +233,9 @@ impl Window3D {
     }
 
     pub fn run(&mut self) {
+        let mut last_flash_time = Instant::now();
+        let mut flash_show = true;
+
         while self.render() {
             for event in self.w.events().iter() {
                 self.handle_event(&event)
@@ -235,7 +244,22 @@ impl Window3D {
             self.handle_gm_messages();
             self.handle_player_messages();
 
-            //println!("hey");
+            // Flash tokens every FLASH_DUR_MS ms.
+            let now = Instant::now();
+            let dur = now.saturating_duration_since(last_flash_time).as_millis();
+            if dur >= FLASH_DUR_MS {
+                last_flash_time = last_flash_time.checked_add(FLASH_DUR).unwrap();
+                flash_show = !flash_show;
+
+                if let Some(win_row) = &self.win_row {
+                    for coords in win_row.row {
+                        self.tokens[Self::coord_to_idx(coords.x, coords.y, coords.z)]
+                            .as_mut()
+                            .unwrap()
+                            .set_visible(flash_show);
+                    }
+                }
+            }
         }
     }
 
@@ -253,11 +277,14 @@ impl Window3D {
                     self.add_token(side, coords.x, coords.y, coords.z);
                 },
                 GameManagerToUI::ResetBoard(board) => {
-                    for token in &mut self.tokens {
-                        token.unlink();
+                    for maybe_token in &mut self.tokens {
+                        if let Some(token) = maybe_token {
+                            token.unlink();
+                            *maybe_token = None;
+                        }
                     }
 
-                    self.tokens.clear();
+                    self.win_row = None;
 
                     // TODO: reimplement as an iterator exposed by the board.
                     for x in 0..ROW_SIZE {
@@ -288,6 +315,10 @@ impl Window3D {
 
                 GameManagerToUI::GameStateChanged(game_state) => {
                     self.game_state = Some(game_state);
+                },
+
+                GameManagerToUI::WinRow(win_row) => {
+                    self.win_row = Some(win_row);
                 },
             }
         }
@@ -490,7 +521,11 @@ impl Window3D {
         s.set_color(c.0, c.1, c.2);
         s.set_local_translation(Self::token_translation(x, y, z));
 
-        self.tokens.push(s);
+        self.tokens[Self::coord_to_idx(x, y, z)] = Some(s);
+    }
+
+    fn coord_to_idx(x: usize, y: usize, z: usize) -> usize {
+        x + y * ROW_SIZE + z * ROW_SIZE * ROW_SIZE
     }
 
     fn color_by_side(side: Side) -> (f32, f32, f32) {
