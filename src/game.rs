@@ -99,6 +99,9 @@ impl Game {
     }
 
     pub fn reset_board(&mut self, board: &BoardState) {
+        // TODO: sanitize the board: don't allow hanging tokens, multiple wins, and unbalanced
+        // sides.
+
         self.board.copy_from(board);
         self.win_row = self.check_win();
     }
@@ -232,12 +235,12 @@ impl Game {
         None
     }
 
-    fn check_win_row(&self, getter: impl Fn(usize) -> CoordsFull) -> Option<WinRow> {
+    fn check_win_row(&self, coord_getter: impl Fn(usize) -> CoordsFull) -> Option<WinRow> {
         let mut row_side: Option<Side> = None;
         let mut row = [CoordsFull{x: 0, y: 0, z: 0}; ROW_SIZE];
 
         for i in 0..ROW_SIZE {
-            let coords = getter(i);
+            let coords = coord_getter(i);
             match self.get_token(coords.x, coords.y, coords.z) {
                 Some(side) => {
                     if i == 0 {
@@ -245,7 +248,7 @@ impl Game {
                         continue;
                     }
 
-                    if row_side != Some(side) {
+                    if row_side.unwrap() != side {
                         return None;
                     }
                 },

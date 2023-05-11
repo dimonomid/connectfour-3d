@@ -50,9 +50,7 @@ impl PlayerWSClient {
                 Ok(()) => { panic!("should never be ok"); },
                 Err(err) => {
                     println!("ws conn error: {}", &err);
-                    self.to_gm
-                        .send(PlayerToGameManager::StateChanged(PlayerState::NotReady(err.to_string())))
-                        .await?;
+                    self.upd_state_not_ready(&err.to_string());
                 }
             }
 
@@ -61,12 +59,12 @@ impl PlayerWSClient {
     }
 
     pub async fn handle_ws_conn(&mut self) -> Result<()> {
-        self.upd_state("connecting to server...").await;
+        self.upd_state_not_ready("connecting to server...").await;
 
         let (ws_stream, _) = connect_async(&self.connect_url).await?;
         println!("WebSocket handshake has been successfully completed");
 
-        self.upd_state("authenticating...").await;
+        self.upd_state_not_ready("authenticating...").await;
 
         let (mut to_ws, mut from_ws) = ws_stream.split();
 
@@ -83,7 +81,7 @@ impl PlayerWSClient {
         let j = serde_json::to_string(&hello)?;
         to_ws.send(tungstenite::Message::Text(j)).await?;
 
-        self.upd_state("connected, waiting for the opponent...").await?;
+        self.upd_state_not_ready("connected, waiting for the opponent...").await?;
 
         loop {
             tokio::select! {
@@ -101,10 +99,10 @@ impl PlayerWSClient {
                         WSServerToClient::Ping => {},
                         WSServerToClient::Msg(s) => {
                             println!("got message from server: {}", s);
-                            self.upd_state(&format!("msg from server: {}", s)).await?;
+                            self.upd_state_not_ready(&format!("msg from server: {}", s)).await?;
                         }
                         WSServerToClient::GameReset(v) => {
-                            self.upd_state("ready").await?;
+                            self.upd_state_ready().await?;
                             self.to_gm
                                 .send(PlayerToGameManager::SetFullGameState(FullGameState{
                                     game_state: v.game_state.game_state,
@@ -117,7 +115,7 @@ impl PlayerWSClient {
                             self.to_gm.send(PlayerToGameManager::PutToken(coords)).await?;
                         }
                         WSServerToClient::OpponentIsGone => {
-                            self.upd_state("opponent disconnected, waiting...").await?;
+                            self.upd_state_not_ready("opponent disconnected, waiting...").await?;
                         }
                     }
                 },
@@ -142,9 +140,17 @@ impl PlayerWSClient {
         }
     }
 
-    pub async fn upd_state(&mut self, state: &str) -> Result<()> {
+    pub async fn upd_state_not_ready(&mut self, state: &str) -> Result<()> {
         self.to_gm
             .send(PlayerToGameManager::StateChanged(PlayerState::NotReady(state.to_string())))
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn upd_state_ready(&mut self) -> Result<()> {
+        self.to_gm
+            .send(PlayerToGameManager::StateChanged(PlayerState::Ready))
             .await?;
 
         Ok(())

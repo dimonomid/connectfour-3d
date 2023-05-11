@@ -458,7 +458,9 @@ impl Window3D {
             PlayerState::NotReady(v) => {
                 s.push_str(&format!(": {}", v));
             },
-            PlayerState::Ready => {},
+            PlayerState::Ready => {
+                s.push_str(&format!(": ready"));
+            },
         }
 
         if let Some(pi) = &self.pending_input {
