@@ -72,17 +72,24 @@ impl GameManager {
     }
 
     pub async fn upd_player_turns(&mut self) -> Result<()> {
+        let gs = self.game_state.unwrap();
+
         self.players[0]
             .to
-            .send(GameManagerToPlayer::GameState(self.game_state.unwrap()))
+            .send(GameManagerToPlayer::GameState(gs))
             .await
             .context(format!("player 0"))?;
 
         self.players[1]
             .to
-            .send(GameManagerToPlayer::GameState(self.game_state.unwrap()))
+            .send(GameManagerToPlayer::GameState(gs))
             .await
             .context(format!("player 1"))?;
+
+        self.to_ui
+            .send(GameManagerToUI::GameStateChanged(gs))
+            .await
+            .context("updating UI")?;
 
         Ok(())
     }
@@ -254,7 +261,11 @@ impl GameManager {
             .send(GameManagerToPlayer::OpponentPutToken(coords))
             .await?;
 
-        self.game_state = Some(GameState::WaitingFor(opposite_side));
+        if res.won {
+            self.game_state = Some(GameState::WonBy(next_move_side));
+        } else {
+            self.game_state = Some(GameState::WaitingFor(opposite_side));
+        }
         self.upd_player_turns().await?;
 
         Ok(())
@@ -312,4 +323,5 @@ pub enum GameManagerToUI {
     ResetBoard(game::BoardState),
     PlayerStateChanged(usize, PlayerState),
     PlayerSidesChanged(game::Side, game::Side),
+    GameStateChanged(GameState),
 }

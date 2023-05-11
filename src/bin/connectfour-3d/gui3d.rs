@@ -14,7 +14,7 @@ use std::vec::Vec;
 
 use ordered_float::OrderedFloat;
 use connectfour::game::{CoordsXZ, Side, ROW_SIZE};
-use connectfour::game_manager::{GameManagerToUI, PlayerState};
+use connectfour::game_manager::{GameManagerToUI, PlayerState, GameState};
 use connectfour::game_manager::player_local::{PlayerLocalToUI};
 use super::OpponentKind;
 
@@ -53,6 +53,9 @@ pub struct Window3D {
     from_players: mpsc::Receiver<PlayerLocalToUI>,
 
     players: [PlayerInfo; 2],
+    opponent_kind: OpponentKind,
+
+    game_state: Option<GameState>,
 }
 
 impl Window3D {
@@ -112,6 +115,8 @@ impl Window3D {
                     side: None,
                 },
             ],
+            opponent_kind,
+            game_state: None,
         };
 
         window.create_frame();
@@ -280,6 +285,10 @@ impl Window3D {
                     self.players[0].side = Some(pri_side);
                     self.players[1].side = Some(sec_side);
                 },
+
+                GameManagerToUI::GameStateChanged(game_state) => {
+                    self.game_state = Some(game_state);
+                },
             }
         }
     }
@@ -321,9 +330,11 @@ impl Window3D {
             return false;
         }
 
+        // Write details about both players.
+
         self.w.draw_text(
             &self.player_str(0),
-            &Point2::new(0.0, 0.0),
+            &Point2::new(10.0, 0.0),
             40.0,
             &self.font,
             &Point3::new(0.0, 1.0, 0.0),
@@ -331,11 +342,56 @@ impl Window3D {
 
         self.w.draw_text(
             &self.player_str(1),
-            &Point2::new(0.0, 50.0),
+            &Point2::new(10.0, 50.0),
             40.0,
             &self.font,
             &Point3::new(0.0, 1.0, 0.0),
         );
+
+        // If needed, write details about the game status.
+        match self.game_state {
+            None => {
+                self.w.draw_text(
+                    "The game did not start yet",
+                    &Point2::new(10.0, 100.0),
+                    40.0,
+                    &self.font,
+                    &Point3::new(1.0, 1.0, 1.0),
+                );
+            },
+            Some(GameState::WonBy(winning_side)) => {
+                let text;
+
+                // Depending on the opponent kind (local or network), we construct the text
+                // differently.
+                match self.opponent_kind {
+                    OpponentKind::Local => {
+                        if self.players[0].side == Some(winning_side) {
+                            text = "player #1 won";
+                        } else {
+                            text = "player #2 won";
+                        }
+                    },
+                    OpponentKind::Network => {
+                        let player_local = &self.players[1];
+                        if player_local.side == Some(winning_side) {
+                            text = "you won!";
+                        } else {
+                            text = "you lost!";
+                        }
+                    },
+                }
+
+                self.w.draw_text(
+                    text,
+                    &Point2::new(10.0, 100.0),
+                    100.0,
+                    &self.font,
+                    &Point3::new(1.0, 1.0, 1.0),
+                );
+            },
+            Some(GameState::WaitingFor(_)) => {},
+        }
 
         true
     }
@@ -472,6 +528,16 @@ impl Window3D {
         }
 
         s
+    }
+
+    fn player_by_side(&self, side: Side) -> Option<&PlayerInfo> {
+        for p in &self.players {
+            if p.side == Some(side) {
+                return Some(p);
+            }
+        }
+
+        return None
     }
 }
 
