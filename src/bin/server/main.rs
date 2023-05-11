@@ -9,13 +9,15 @@ use tokio_tungstenite::{tungstenite, WebSocketStream, tungstenite::protocol::Mes
 use futures_util::{SinkExt, StreamExt};
 use futures_util::stream::{SplitStream, SplitSink};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc;
 
 use std::time::Duration;
 use tokio::{time};
 
 use registry::{Registry, GameCtx};
 
-use connect4::{WSClientToServer};
+use connect4::{WSClientToServer, WSServerToClient, WSFullGameState, GameReset};
+use registry::PlayerToPlayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -54,11 +56,11 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
     let recv = read.next().await.ok_or(anyhow!("failed to read from ws"))??;
     let msg: WSClientToServer = serde_json::from_str(&recv.to_string())?;
 
-    let hello = match msg {
+    let player_info = match msg {
         WSClientToServer::Hello(msg) => msg,
         v => {
-            // TODO: format as JSON
-            let _ = write.send(tungstenite::Message::Text(format!("expected hello"))).await;
+            let j = serde_json::to_string(&WSServerToClient::Msg("expected hello".to_string()))?;
+            let _ = write.send(tungstenite::Message::Text(j)).await;
  
             return Err(anyhow!("expected hello, got {:?}", v));
         },
@@ -66,47 +68,105 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
 
     let player_id = addr.to_string();
 
-    let game_ctx = match r.join_or_create_game(&hello.game_id, &player_id).await {
+    let (to_player_tx, to_player_rx) = mpsc::channel::<PlayerToPlayer>(8);
+
+    let game_ctx = match r.join_or_create_game(
+        &player_info.game_id, &player_id, to_player_tx.clone(),
+        player_info.game_state.clone(),
+        ).await {
         Ok(v) => v,
         Err(err) => {
-            // TODO: format as JSON
-            let _ = write.send(tungstenite::Message::Text(format!("no game for you: {}", err))).await;
+            let j = serde_json::to_string(&WSServerToClient::Msg(format!("no game for you: {}", err)))?;
+            let _ = write.send(tungstenite::Message::Text(j)).await;
             return Err(err);
         }
     };
 
-    let leave_msg = match handle_player(game_ctx.clone(), &player_id, write, read).await {
+    let leave_msg = match handle_player(game_ctx.clone(), (*player_info.game_state).clone(), &player_id, to_player_rx, write, read).await {
         Ok(()) => format!("ok"),
         Err(err) => format!("err: {}", err),
     };
 
-    r.leave_game(&hello.game_id, &player_id).await;
+    r.leave_game(&player_info.game_id, &player_id).await;
 
     Err(anyhow!("left game: {}", leave_msg))
 }
 
 async fn handle_player(
     game_ctx: Arc<GameCtx>,
+    game_state: WSFullGameState,
     player_id: &str,
-    mut write: SplitSink<WebSocketStream<tokio::net::TcpStream>, Message>,
-    mut read: SplitStream<WebSocketStream<tokio::net::TcpStream>>,
+    mut from_opponent: mpsc::Receiver<PlayerToPlayer>,
+    mut to_ws: SplitSink<WebSocketStream<tokio::net::TcpStream>, Message>,
+    mut from_ws: SplitStream<WebSocketStream<tokio::net::TcpStream>>,
 ) -> Result<()> {
     println!("handling game {} for {}", game_ctx.id, &player_id);
 
-    let mut interval = time::interval(Duration::from_millis(1000));
+    let mut ping_interval = time::interval(Duration::from_millis(5000));
+    let mut maybe_to_opponent: Option<mpsc::Sender<PlayerToPlayer>> = None;
 
     loop {
         tokio::select! {
-            Some(v) = read.next() => {
+            Some(v) = from_ws.next() => {
                 let recv = v?;
-
                 println!("new msg: {:?}", recv);
-                write.send(tungstenite::Message::Text("my message ".to_string() + &recv.to_string())).await?
+                //to_ws.send(tungstenite::Message::Text("my message ".to_string() + &recv.to_string())).await?
+
+                let msg: WSClientToServer = serde_json::from_str(&recv.to_string())?;
+                match msg {
+                    WSClientToServer::Hello(_) => { return Err(anyhow!("did not expect hello")); }
+                    WSClientToServer::PutToken(coords) => {
+                        let to_opponent = match maybe_to_opponent.clone() {
+                            Some(sender) => sender,
+                            None => {
+                                // TODO: stash the value
+                                println!("received coords while not having the opponent");
+                                continue;
+                            },
+                        };
+
+                        let _ = to_opponent.send(PlayerToPlayer::PutToken(coords)).await;
+                    },
+                }
             }
 
-            _ = interval.tick() => {
-                println!("tick");
-                write.send(tungstenite::Message::Text("ping".to_string())).await.expect("boo");
+            Some(val) = from_opponent.recv() => {
+                println!("player {}: received from another player: {:?}", player_id, val);
+
+                match val {
+                    PlayerToPlayer::OpponentIsHere(v) => {
+                        maybe_to_opponent = Some(v.to_opponent);
+
+                        let mut gd = game_ctx.data.lock().await;
+                        let game_reset = WSServerToClient::GameReset(GameReset{
+                            opponent_name: Arc::new("my opponent".to_string()), // TODO: actual name
+                            game_state: Arc::new(WSFullGameState{
+                                game_state: gd.game_state,
+                                ws_player_side: v.my_side,
+                                board: gd.board.clone(),
+                            }),
+                        });
+
+                        drop(gd);
+
+                        let j = serde_json::to_string(&game_reset)?;
+                        to_ws.send(tungstenite::Message::Text(j)).await?;
+                    },
+                    PlayerToPlayer::OpponentIsGone => { maybe_to_opponent = None; }
+
+                    PlayerToPlayer::PutToken(coords) => {
+                        println!("received PutToken({:?})", coords);
+
+                        let put_token = WSServerToClient::PutToken(coords);
+                        let j = serde_json::to_string(&put_token)?;
+                        to_ws.send(tungstenite::Message::Text(j)).await?;
+                    },
+                }
+            }
+
+            _ = ping_interval.tick() => {
+                let j = serde_json::to_string(&WSServerToClient::Ping)?;
+                to_ws.send(tungstenite::Message::Text(j)).await.expect("boo");
             }
         }
     }

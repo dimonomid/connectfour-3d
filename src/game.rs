@@ -33,7 +33,7 @@ pub struct CoordsFull {
     pub z: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CoordsXZ {
     pub x: usize,
     pub z: usize,

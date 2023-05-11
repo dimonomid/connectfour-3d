@@ -2,7 +2,7 @@ pub mod player_local;
 pub mod player_ws_client;
 
 use super::game;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use tokio::sync::mpsc;
 
@@ -152,7 +152,6 @@ impl GameManager {
         }
     }
 
-    /*
     fn player_by_side(&self, side: game::Side) -> Result<&PlayerCtx> {
         match self.players[0].side {
             Some(v) => {
@@ -165,7 +164,6 @@ impl GameManager {
             None => Err(anyhow!("player 0 doesn't have a side")),
         }
     }
-    */
 
     pub async fn handle_player_msg(&mut self, i: usize, msg: PlayerToGameManager) -> Result<()> {
         match msg {
@@ -239,7 +237,14 @@ impl GameManager {
             .await
             .context("updating UI")?;
 
-        self.game_state = Some(GameState::WaitingFor(next_move_side.opposite()));
+        let opposite_side = next_move_side.opposite();
+
+        self.player_by_side(opposite_side).unwrap()
+            .to
+            .send(GameManagerToPlayer::OpponentPutToken(coords))
+            .await?;
+
+        self.game_state = Some(GameState::WaitingFor(opposite_side));
         self.upd_player_turns().await?;
 
         Ok(())

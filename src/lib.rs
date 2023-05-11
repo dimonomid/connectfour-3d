@@ -4,12 +4,21 @@ pub mod game_manager;
 use std::sync::Arc;
 use crate::game_manager::GameState;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum WSClientToServer {
     Hello(WSClientInfo),
+    PutToken(game::CoordsXZ),
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum WSServerToClient {
+    Ping,
+    Msg(String),
+    GameReset(GameReset),
+    PutToken(game::CoordsXZ),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WSClientInfo {
     pub game_id: Arc<String>,
     pub player_name: Arc<String>,
@@ -17,7 +26,14 @@ pub struct WSClientInfo {
     pub game_state: Arc<WSFullGameState>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GameReset {
+    pub opponent_name: Arc<String>,
+
+    pub game_state: Arc<WSFullGameState>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WSFullGameState {
     pub game_state: GameState,
 

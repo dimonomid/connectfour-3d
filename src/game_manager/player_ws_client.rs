@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
 
-use super::{GameManagerToPlayer, PlayerState, GameState, PlayerToGameManager};
+use super::{GameManagerToPlayer, PlayerState, GameState, PlayerToGameManager, FullGameState};
 use crate::game;
-use crate::{WSClientToServer, WSClientInfo, WSFullGameState};
+use crate::{WSClientToServer, WSClientInfo, WSFullGameState, WSServerToClient, GameReset};
 
 use tokio::sync::mpsc;
 use tokio::{time};
@@ -51,20 +51,25 @@ impl PlayerWSClient {
             .await?;
 
         loop {
-            match self.handle_conn().await {
-                Ok(()) => { println!("ws conn ok"); },
-                Err(err) => { println!("ws conn error: {}", err); }
+            match self.handle_ws_conn().await {
+                Ok(()) => { panic!("should never be ok"); },
+                Err(err) => {
+                    println!("ws conn error: {}", &err);
+                    self.to_gm
+                        .send(PlayerToGameManager::StateChanged(PlayerState::NotReady(err.to_string())))
+                        .await?;
+                }
             }
 
             time::sleep(Duration::from_millis(1000)).await;
         }
     }
 
-    pub async fn handle_conn(&mut self) -> Result<()> {
+    pub async fn handle_ws_conn(&mut self) -> Result<()> {
         let (ws_stream, _) = connect_async(&self.connect_url).await?;
         println!("WebSocket handshake has been successfully completed");
 
-        let (mut write, mut read) = ws_stream.split();
+        let (mut to_ws, mut from_ws) = ws_stream.split();
 
         let hello = WSClientToServer::Hello(WSClientInfo{
             game_id: Arc::new("mygame".to_string()),
@@ -77,10 +82,56 @@ impl PlayerWSClient {
         });
 
         let j = serde_json::to_string(&hello)?;
-        write.send(tungstenite::Message::Text(j)).await?;
+        to_ws.send(tungstenite::Message::Text(j)).await?;
         loop {
-            let received = read.next().await.ok_or(anyhow!("failed to read from ws"))??;
-            println!("received: {:?}", received);
+            tokio::select! {
+                v = from_ws.next() => {
+                    let recv = v.ok_or(anyhow!("failed to read from ws"))??;
+
+                    let msg: WSServerToClient = match serde_json::from_str(&recv.to_string()) {
+                        Ok(v) => v,
+                        Err(err) => { return Err(anyhow!("failed to parse {:?}: {}", recv, err)); }
+                    };
+
+                    println!("received: {:?}", msg);
+
+                    match msg {
+                        WSServerToClient::Ping => {},
+                        WSServerToClient::Msg(s) => {
+                            println!("got message from server: {}", s);
+                        }
+                        WSServerToClient::GameReset(v) => {
+                            self.to_gm
+                                .send(PlayerToGameManager::SetFullGameState(FullGameState{
+                                    game_state: v.game_state.game_state,
+                                    primary_player_side: v.game_state.ws_player_side,
+                                    board: v.game_state.board.clone(),
+                                }))
+                                .await?;
+                        }
+                        WSServerToClient::PutToken(coords) => {
+                            self.to_gm.send(PlayerToGameManager::PutToken(coords)).await?;
+                        }
+                    }
+                },
+
+                Some(val) = self.from_gm.recv() => {
+                    println!("ws player {:?}: received from GM: {:?}", self.side, val);
+
+                    match val {
+                        GameManagerToPlayer::Reset(_board, new_side) => {
+                            self.side = Some(new_side);
+                        },
+                        GameManagerToPlayer::OpponentPutToken(coords) => {
+                            let msg = WSClientToServer::PutToken(coords);
+                            let j = serde_json::to_string(&msg)?;
+                            to_ws.send(tungstenite::Message::Text(j)).await?;
+                        },
+                        GameManagerToPlayer::GameState(_) => {},
+                    }
+                }
+            }
+
         }
     }
 
