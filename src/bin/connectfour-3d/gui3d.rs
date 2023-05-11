@@ -14,7 +14,7 @@ use std::vec::Vec;
 
 use ordered_float::OrderedFloat;
 use connect4::game::{CoordsXZ, Side, ROW_SIZE};
-use connect4::game_manager::{GameManagerToUI};
+use connect4::game_manager::{GameManagerToUI, PlayerState};
 use connect4::game_manager::player_local::{PlayerLocalToUI};
 
 const POLE_WIDTH: f32 = 1.0;
@@ -40,7 +40,7 @@ pub struct Window3D {
     tokens: Vec<SceneNode>,
     pole_pointer: SceneNode,
 
-    coord_sender: Option<mpsc::Sender<CoordsXZ>>,
+    pending_input: Option<PendingInput>,
 
     last_pos: Point2<f32>,
 
@@ -50,12 +50,16 @@ pub struct Window3D {
 
     from_gm: mpsc::Receiver<GameManagerToUI>,
     from_players: mpsc::Receiver<PlayerLocalToUI>,
+
+    players: [PlayerInfo; 2],
 }
 
 impl Window3D {
     pub fn new(
         from_gm: mpsc::Receiver<GameManagerToUI>,
         from_players: mpsc::Receiver<PlayerLocalToUI>,
+        p0_name: String,
+        p1_name: String,
     ) -> Window3D {
         let mut w = Window::new("ConnectFour 3D");
         w.set_light(Light::StickToCamera);
@@ -76,12 +80,24 @@ impl Window3D {
             camera,
             tokens: vec![],
             pole_pointer,
-            coord_sender: None,
+            pending_input: None,
             mouse_down: false,
             rotating: false,
             from_gm,
             from_players,
             last_pos: Point2::new(0.0f32, 0.0f32),
+            players: [
+                PlayerInfo{
+                    name: p0_name,
+                    state: PlayerState::NotReady("-".to_string()),
+                    side: None,
+                },
+                PlayerInfo{
+                    name: p1_name,
+                    state: PlayerState::NotReady("-".to_string()),
+                    side: None,
+                },
+            ],
         };
 
         window.create_frame();
@@ -143,15 +159,16 @@ impl Window3D {
                 };
 
                 match self
-                    .coord_sender
+                    .pending_input
                     .as_ref()
-                    .expect("no coord_sender")
+                    .expect("no pending_input")
+                    .coord_sender
                     .try_send(CoordsXZ {
                         x: coords.0,
                         z: coords.1,
                     }) {
                     Ok(_) => {
-                        self.coord_sender = None;
+                        self.pending_input = None;
                     }
                     Err(err) => {
                         println!("failed sending coords to the player: {}", err);
@@ -247,6 +264,20 @@ impl Window3D {
                     }
                     //self.add_token(side, coords.x, coords.y, coords.z);
                 },
+
+                GameManagerToUI::PlayerStateChanged(i, state) => {
+                    if i >= 2 {
+                        // TODO: create a separate enum for player indices
+                        panic!("invalid player idx: {}", i)
+                    }
+
+                    self.players[i].state = state;
+                },
+
+                GameManagerToUI::PlayerSidesChanged(pri_side, sec_side) => {
+                    self.players[0].side = Some(pri_side);
+                    self.players[1].side = Some(sec_side);
+                },
             }
         }
     }
@@ -263,12 +294,17 @@ impl Window3D {
             match msg {
                 PlayerLocalToUI::RequestInput(side, coord_sender) => {
                     // Sanity check that the UI is not busy serving another player.
-                    if let Some(_) = self.coord_sender {
-                        panic!("coord_sender already existed when a new one came in");
+                    if let Some(v) = &self.pending_input {
+                        if v.side != side {
+                            panic!("coord_sender already existed for {:?} when a new one for {:?} came in", v.side, side);
+                        }
                     }
 
                     // Remember the channel to send the resulting coords to.
-                    self.coord_sender = Some(coord_sender);
+                    self.pending_input = Some(PendingInput{
+                        coord_sender,
+                        side,
+                    });
 
                     // Update the color of the pole pointer to reflect the side.
                     let c = Self::color_by_side(side);
@@ -283,21 +319,27 @@ impl Window3D {
             return false;
         }
 
-        if self.waiting_for_input() {
-            self.w.draw_text(
-                "Waiting for input",
-                &Point2::origin(),
-                60.0,
-                &self.font,
-                &Point3::new(0.0, 1.0, 1.0),
-            );
-        }
+        self.w.draw_text(
+            &self.player_str(0),
+            &Point2::new(0.0, 0.0),
+            40.0,
+            &self.font,
+            &Point3::new(0.0, 1.0, 1.0),
+        );
+
+        self.w.draw_text(
+            &self.player_str(1),
+            &Point2::new(0.0, 50.0),
+            40.0,
+            &self.font,
+            &Point3::new(0.0, 1.0, 1.0),
+        );
 
         true
     }
 
     fn waiting_for_input(&self) -> bool {
-        if let Some(_) = self.coord_sender {
+        if let Some(_) = self.pending_input {
             return true;
         }
 
@@ -399,4 +441,43 @@ impl Window3D {
             Side::White => (1.0, 1.0, 1.0),
         }
     }
+
+    fn player_str(&self, i: usize) -> String {
+        if i >= 2 {
+            // TODO: create a separate enum for player indices
+            panic!("invalid player idx: {}", i);
+        }
+
+        let mut s = format!("player #{}, {}", i+1, self.players[i].name);
+
+        if let Some(side) = self.players[i].side {
+            s.push_str(&format!(" ({:?})", side));
+        }
+
+        match &self.players[i].state {
+            PlayerState::NotReady(v) => {
+                s.push_str(&format!(": {}", v));
+            },
+            PlayerState::Ready => {},
+        }
+
+        if let Some(pi) = &self.pending_input {
+            if Some(pi.side) == self.players[i].side {
+                s.push_str(": your turn");
+            }
+        }
+
+        s
+    }
+}
+
+struct PendingInput {
+    coord_sender: mpsc::Sender<CoordsXZ>,
+    side: Side,
+}
+
+struct PlayerInfo {
+    name: String,
+    state: PlayerState,
+    side: Option<Side>,
 }

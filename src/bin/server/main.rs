@@ -156,7 +156,12 @@ async fn handle_player(
                         let j = serde_json::to_string(&game_reset)?;
                         to_ws.send(tungstenite::Message::Text(j)).await?;
                     },
-                    PlayerToPlayer::OpponentIsGone => { maybe_to_opponent = None; }
+                    PlayerToPlayer::OpponentIsGone => {
+                        maybe_to_opponent = None;
+
+                        let j = serde_json::to_string(&WSServerToClient::OpponentIsGone)?;
+                        to_ws.send(tungstenite::Message::Text(j)).await?;
+                    }
 
                     PlayerToPlayer::PutToken(coords) => {
                         println!("received PutToken({:?})", coords);
@@ -175,7 +180,7 @@ async fn handle_player(
 
             _ = ping_interval.tick() => {
                 let j = serde_json::to_string(&WSServerToClient::Ping)?;
-                to_ws.send(tungstenite::Message::Text(j)).await.expect("boo");
+                to_ws.send(tungstenite::Message::Text(j)).await?;
             }
         }
     }

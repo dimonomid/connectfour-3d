@@ -91,7 +91,11 @@ impl GameManager {
         // Remember state for the player which sent us the update.
         self.players[i].state = state.clone();
 
-        // TODO: update UI about the player state
+        // Update UI about the player state
+        self.to_ui
+            .send(GameManagerToUI::PlayerStateChanged(i, state.clone()))
+            .await
+            .context("updating UI")?;
 
         Ok(())
     }
@@ -106,11 +110,11 @@ impl GameManager {
         self.game.reset_board(&fgstate.board);
 
         // Remember state for the player which sent us the update.
-        self.players[i].side = Some(fgstate.primary_player_side);
+        self.players[0].side = Some(fgstate.primary_player_side);
 
         // Update it for the opponent as well.
         let opposite_side = fgstate.primary_player_side.opposite();
-        let opponent_idx = Self::opponent_idx(i);
+        let opponent_idx = Self::opponent_idx(0);
         self.players[opponent_idx].side = Some(opposite_side);
 
         // Reset the game for the opponent.
@@ -124,6 +128,12 @@ impl GameManager {
         // Update UI.
         self.to_ui
             .send(GameManagerToUI::ResetBoard(fgstate.board.clone()))
+            .await
+            .context("updating UI")?;
+
+        // Update UI about the player sides.
+        self.to_ui
+            .send(GameManagerToUI::PlayerSidesChanged(fgstate.primary_player_side, opposite_side))
             .await
             .context("updating UI")?;
 
@@ -300,4 +310,6 @@ pub enum PlayerToGameManager {
 pub enum GameManagerToUI {
     SetToken(game::Side, game::CoordsFull),
     ResetBoard(game::BoardState),
+    PlayerStateChanged(usize, PlayerState),
+    PlayerSidesChanged(game::Side, game::Side),
 }

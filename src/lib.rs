@@ -16,6 +16,7 @@ pub enum WSServerToClient {
     Msg(String),
     GameReset(GameReset),
     PutToken(game::CoordsXZ),
+    OpponentIsGone,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

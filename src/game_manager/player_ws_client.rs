@@ -45,11 +45,6 @@ impl PlayerWSClient {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        println!("ws client {:?}: letting GM know that we're connecting", self.side);
-        self.to_gm
-            .send(PlayerToGameManager::StateChanged(PlayerState::NotReady("Connecting to server...".to_string())))
-            .await?;
-
         loop {
             match self.handle_ws_conn().await {
                 Ok(()) => { panic!("should never be ok"); },
@@ -66,8 +61,12 @@ impl PlayerWSClient {
     }
 
     pub async fn handle_ws_conn(&mut self) -> Result<()> {
+        self.upd_state("connecting to server...").await;
+
         let (ws_stream, _) = connect_async(&self.connect_url).await?;
         println!("WebSocket handshake has been successfully completed");
+
+        self.upd_state("authenticating...").await;
 
         let (mut to_ws, mut from_ws) = ws_stream.split();
 
@@ -83,6 +82,9 @@ impl PlayerWSClient {
 
         let j = serde_json::to_string(&hello)?;
         to_ws.send(tungstenite::Message::Text(j)).await?;
+
+        self.upd_state("connected, waiting for the opponent...").await?;
+
         loop {
             tokio::select! {
                 v = from_ws.next() => {
@@ -99,8 +101,10 @@ impl PlayerWSClient {
                         WSServerToClient::Ping => {},
                         WSServerToClient::Msg(s) => {
                             println!("got message from server: {}", s);
+                            self.upd_state(&format!("msg from server: {}", s)).await?;
                         }
                         WSServerToClient::GameReset(v) => {
+                            self.upd_state("ready").await?;
                             self.to_gm
                                 .send(PlayerToGameManager::SetFullGameState(FullGameState{
                                     game_state: v.game_state.game_state,
@@ -111,6 +115,9 @@ impl PlayerWSClient {
                         }
                         WSServerToClient::PutToken(coords) => {
                             self.to_gm.send(PlayerToGameManager::PutToken(coords)).await?;
+                        }
+                        WSServerToClient::OpponentIsGone => {
+                            self.upd_state("opponent disconnected, waiting...").await?;
                         }
                     }
                 },
@@ -135,33 +142,11 @@ impl PlayerWSClient {
         }
     }
 
-    //async fn handle_game_state(&mut self, _state: GameState) -> Result<()> {
-        // TODO
+    pub async fn upd_state(&mut self, state: &str) -> Result<()> {
+        self.to_gm
+            .send(PlayerToGameManager::StateChanged(PlayerState::NotReady(state.to_string())))
+            .await?;
 
-        //match state {
-            //PlayerGameState::YourTurn => {
-                //self.to_ui
-                    //.send(PlayerLocalToUI::RequestInput(
-                        //self.side.unwrap(),
-                        //self.coords_from_ui_sender.clone(),
-                    //))
-                    //.await?;
-            //}
-
-            //// We don't need to do anything special on any other game state, but still enumerating
-            //// them all explicitly so that if the enum changes, we're forced by the compiler to
-            //// revisit this logic.
-            //PlayerGameState::NoGame => {}
-            //PlayerGameState::OpponentsTurn => {}
-            //PlayerGameState::OpponentWon => {}
-            //PlayerGameState::YouWon => {}
-        //};
-
-        //Ok(())
-    //}
+        Ok(())
+    }
 }
-
-//pub enum ConnState {
-    //Waiting,
-    //Connecting
-//}

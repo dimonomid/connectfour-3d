@@ -22,7 +22,7 @@ fn main() {
 
     // Run GUI in the main thread. It's easier since when the user closes the window, the whole
     // thing gets killed (albeit not yet gracefully).
-    let mut w = gui3d::Window3D::new(gm_to_ui_receiver, player_to_ui_rx);
+    let mut w = gui3d::Window3D::new(gm_to_ui_receiver, player_to_ui_rx, "network".to_string(), "local (you)".to_string());
     w.run();
 
     // GUI window was closed by the user.
