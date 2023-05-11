@@ -390,6 +390,27 @@ impl Window3D {
                     &Point3::new(1.0, 1.0, 1.0),
                 );
             },
+
+            Some(GameState::WaitingFor(side)) => {
+                match self.opponent_kind {
+                    OpponentKind::Local => {
+                        // Nothing special to write here in local mode.
+                    },
+                    OpponentKind::Network => {
+                        let player_local = &self.players[1];
+                        if player_local.side == Some(side) {
+                            self.w.draw_text(
+                                "Your turn",
+                                &Point2::new(10.0, 100.0),
+                                60.0,
+                                &self.font,
+                                &Point3::new(1.0, 1.0, 1.0),
+                            );
+                        }
+                    },
+                }
+            },
+
             Some(GameState::WonBy(winning_side)) => {
                 let text;
 
