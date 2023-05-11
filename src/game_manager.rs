@@ -127,10 +127,9 @@ impl GameManager {
             .await
             .context("updating UI")?;
 
-        println!("game state is known, gonna start: {}: {:?}, {}: {:?}, gonna start", i, fgstate.primary_player_side, opponent_idx, opposite_side);
+        println!("game state is known, gonna let players know: {}: {:?}, {}: {:?}", i, fgstate.primary_player_side, opponent_idx, opposite_side);
 
-        // TODO: fix it
-        self.game_state = GameState::WaitingFor(fgstate.next_move_side);
+        self.game_state = fgstate.game_state;
 
         self.upd_player_turns().await.context("initial update")?;
 
@@ -252,7 +251,7 @@ impl GameManager {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum GameState {
     NotStarted,
     WaitingFor(game::Side),
@@ -261,15 +260,14 @@ pub enum GameState {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct FullGameState {
+    pub game_state: GameState,
+
     /// Side of the primary player (the one who sends PlayerToGameManager::SetFullGameState with
     /// this full state).
     pub primary_player_side: game::Side,
 
     /// Full board state.
     pub board: game::BoardState,
-
-    /// Who should make the next move.
-    pub next_move_side: game::Side,
 }
 
 /// Player state from the point of view of the GameManager.

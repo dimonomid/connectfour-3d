@@ -47,12 +47,14 @@ impl PlayerLocal {
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        // If the PlayerLocal was constructed with the side right away (which has to be done if the
+        // player is a primary one), then set the initial game state to the GameManager.
         if let Some(side) = self.side {
             self.to_gm
                 .send(PlayerToGameManager::SetFullGameState(FullGameState{
+                    game_state: GameState::WaitingFor(side),
                     primary_player_side: side,
                     board: game::BoardState::new(),
-                    next_move_side: side,
                 }))
                 .await?;
         }
