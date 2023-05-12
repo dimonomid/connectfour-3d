@@ -109,7 +109,10 @@ impl GameManager {
 
     async fn handle_full_game_state(&mut self, i: usize, fgstate: FullGameState) -> Result<()> {
         if i != 0 {
-            println!("player {} is not primary, so ignoring its FullGameState update ({:?})", i, fgstate);
+            println!(
+                "player {} is not primary, so ignoring its FullGameState update ({:?})",
+                i, fgstate
+            );
             return Ok(());
         }
 
@@ -128,9 +131,15 @@ impl GameManager {
         let opponent = &self.players[opponent_idx];
         opponent
             .to
-            .send(GameManagerToPlayer::Reset(fgstate.board.clone(), opposite_side))
+            .send(GameManagerToPlayer::Reset(
+                fgstate.board.clone(),
+                opposite_side,
+            ))
             .await
-            .context(format!("resetting player {}, setting side to {:?}", opponent_idx, opposite_side))?;
+            .context(format!(
+                "resetting player {}, setting side to {:?}",
+                opponent_idx, opposite_side
+            ))?;
 
         // Update UI.
         self.to_ui
@@ -140,11 +149,17 @@ impl GameManager {
 
         // Update UI about the player sides.
         self.to_ui
-            .send(GameManagerToUI::PlayerSidesChanged(fgstate.primary_player_side, opposite_side))
+            .send(GameManagerToUI::PlayerSidesChanged(
+                fgstate.primary_player_side,
+                opposite_side,
+            ))
             .await
             .context("updating UI")?;
 
-        println!("game state is known, gonna let players know: {}: {:?}, {}: {:?}", i, fgstate.primary_player_side, opponent_idx, opposite_side);
+        println!(
+            "game state is known, gonna let players know: {}: {:?}, {}: {:?}",
+            i, fgstate.primary_player_side, opponent_idx, opposite_side
+        );
 
         self.game_state = Some(fgstate.game_state);
 
@@ -214,7 +229,7 @@ impl GameManager {
                 println!("game is won, but player put token");
                 self.upd_player_turns().await?;
                 return Ok(());
-            },
+            }
         };
 
         let player_side = match side {
@@ -227,7 +242,10 @@ impl GameManager {
         };
 
         if player_side != next_move_side {
-            println!("wrong side: {:?}, waiting for {:?}", player_side, next_move_side);
+            println!(
+                "wrong side: {:?}, waiting for {:?}",
+                player_side, next_move_side
+            );
             self.upd_player_turns().await?;
             return Ok(());
         }
@@ -256,7 +274,8 @@ impl GameManager {
 
         let opposite_side = next_move_side.opposite();
 
-        self.player_by_side(opposite_side).unwrap()
+        self.player_by_side(opposite_side)
+            .unwrap()
             .to
             .send(GameManagerToPlayer::OpponentPutToken(coords))
             .await?;

@@ -8,16 +8,16 @@ use kiss3d::window::Window;
 
 use tokio::sync::mpsc;
 
-use std::rc::Rc;
 use std::cmp::Ordering;
-use std::vec::Vec;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
+use std::vec::Vec;
 
-use ordered_float::OrderedFloat;
-use connectfour::game::{CoordsXZ, Side, WinRow, ROW_SIZE};
-use connectfour::game_manager::{GameManagerToUI, PlayerState, GameState};
-use connectfour::game_manager::player_local::{PlayerLocalToUI};
 use super::OpponentKind;
+use connectfour::game::{CoordsXZ, Side, WinRow, ROW_SIZE};
+use connectfour::game_manager::player_local::PlayerLocalToUI;
+use connectfour::game_manager::{GameManagerToUI, GameState, PlayerState};
+use ordered_float::OrderedFloat;
 
 const POLE_WIDTH: f32 = 1.0;
 const TOKEN_D_TO_HEIGHT: f32 = 0.8;
@@ -89,11 +89,11 @@ impl Window3D {
             OpponentKind::Local => {
                 p0_name = "local";
                 p1_name = "local";
-            },
+            }
             OpponentKind::Network => {
                 p0_name = "network";
                 p1_name = "local (you)";
-            },
+            }
         }
 
         let mut window = Window3D {
@@ -109,12 +109,12 @@ impl Window3D {
             from_players,
             last_pos: Point2::new(0.0f32, 0.0f32),
             players: [
-                PlayerInfo{
+                PlayerInfo {
                     name: p0_name.to_string(),
                     state: PlayerState::NotReady("-".to_string()),
                     side: None,
                 },
-                PlayerInfo{
+                PlayerInfo {
                     name: p1_name.to_string(),
                     state: PlayerState::NotReady("-".to_string()),
                     side: None,
@@ -275,7 +275,7 @@ impl Window3D {
             match msg {
                 GameManagerToUI::SetToken(side, coords) => {
                     self.add_token(side, coords.x, coords.y, coords.z);
-                },
+                }
                 GameManagerToUI::ResetBoard(board) => {
                     for maybe_token in &mut self.tokens {
                         if let Some(token) = maybe_token {
@@ -297,7 +297,7 @@ impl Window3D {
                         }
                     }
                     //self.add_token(side, coords.x, coords.y, coords.z);
-                },
+                }
 
                 GameManagerToUI::PlayerStateChanged(i, state) => {
                     if i >= 2 {
@@ -306,20 +306,20 @@ impl Window3D {
                     }
 
                     self.players[i].state = state;
-                },
+                }
 
                 GameManagerToUI::PlayerSidesChanged(pri_side, sec_side) => {
                     self.players[0].side = Some(pri_side);
                     self.players[1].side = Some(sec_side);
-                },
+                }
 
                 GameManagerToUI::GameStateChanged(game_state) => {
                     self.game_state = Some(game_state);
-                },
+                }
 
                 GameManagerToUI::WinRow(win_row) => {
                     self.win_row = Some(win_row);
-                },
+                }
             }
         }
     }
@@ -343,10 +343,7 @@ impl Window3D {
                     }
 
                     // Remember the channel to send the resulting coords to.
-                    self.pending_input = Some(PendingInput{
-                        coord_sender,
-                        side,
-                    });
+                    self.pending_input = Some(PendingInput { coord_sender, side });
 
                     // Update the color of the pole pointer to reflect the side.
                     let c = Self::color_by_side(side);
@@ -389,13 +386,13 @@ impl Window3D {
                     &self.font,
                     &Point3::new(1.0, 1.0, 1.0),
                 );
-            },
+            }
 
             Some(GameState::WaitingFor(side)) => {
                 match self.opponent_kind {
                     OpponentKind::Local => {
                         // Nothing special to write here in local mode.
-                    },
+                    }
                     OpponentKind::Network => {
                         let player_local = &self.players[1];
                         if player_local.side == Some(side) {
@@ -407,9 +404,9 @@ impl Window3D {
                                 &Point3::new(1.0, 1.0, 1.0),
                             );
                         }
-                    },
+                    }
                 }
-            },
+            }
 
             Some(GameState::WonBy(winning_side)) => {
                 let text;
@@ -423,7 +420,7 @@ impl Window3D {
                         } else {
                             text = "player #2 won";
                         }
-                    },
+                    }
                     OpponentKind::Network => {
                         let player_local = &self.players[1];
                         if player_local.side == Some(winning_side) {
@@ -431,7 +428,7 @@ impl Window3D {
                         } else {
                             text = "you lost!";
                         }
-                    },
+                    }
                 }
 
                 self.w.draw_text(
@@ -441,7 +438,7 @@ impl Window3D {
                     &self.font,
                     &Point3::new(1.0, 1.0, 1.0),
                 );
-            },
+            }
         }
 
         true
@@ -552,7 +549,7 @@ impl Window3D {
         return match side {
             Side::Black => (0.8, 0.5, 0.0),
             Side::White => (1.0, 1.0, 1.0),
-        }
+        };
     }
 
     fn player_str(&self, i: usize) -> String {
@@ -561,7 +558,7 @@ impl Window3D {
             panic!("invalid player idx: {}", i);
         }
 
-        let mut s = format!("player #{}, {}", i+1, self.players[i].name);
+        let mut s = format!("player #{}, {}", i + 1, self.players[i].name);
 
         if let Some(side) = self.players[i].side {
             s.push_str(&format!(" ({:?})", side));
@@ -570,10 +567,10 @@ impl Window3D {
         match &self.players[i].state {
             PlayerState::NotReady(v) => {
                 s.push_str(&format!(": {}", v));
-            },
+            }
             PlayerState::Ready => {
                 s.push_str(&format!(": ready"));
-            },
+            }
         }
 
         if let Some(pi) = &self.pending_input {

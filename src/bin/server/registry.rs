@@ -1,11 +1,11 @@
-use tokio::sync::{Mutex};
-use std::sync::Arc;
-use std::collections::HashMap;
 use anyhow::{anyhow, Result};
-use tokio::sync::mpsc;
-use connectfour::game_manager::GameState;
 use connectfour::game;
-use connectfour::{WSFullGameState};
+use connectfour::game_manager::GameState;
+use connectfour::WSFullGameState;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 
 pub struct Registry {
     game_by_name: Mutex<HashMap<String, Arc<GameCtx>>>,
@@ -50,25 +50,36 @@ impl Registry {
     pub fn new() -> Registry {
         let m = HashMap::<String, Arc<GameCtx>>::new();
 
-        Registry{
+        Registry {
             game_by_name: Mutex::<HashMap<String, Arc<GameCtx>>>::new(m),
         }
     }
 
     pub async fn join_or_create_game(
-        &self, game_id: &str, player_id: &str, to_player: mpsc::Sender<PlayerToPlayer>,
+        &self,
+        game_id: &str,
+        player_id: &str,
+        to_player: mpsc::Sender<PlayerToPlayer>,
         game_state: Arc<WSFullGameState>,
     ) -> Result<Arc<GameCtx>> {
         let mut m = self.game_by_name.lock().await;
 
         // Try to join existin game, if any.
-        match self.try_join_game(&mut m, game_id, player_id, &to_player).await {
-            Some(res) => { return res; },
-            None => {},
+        match self
+            .try_join_game(&mut m, game_id, player_id, &to_player)
+            .await
+        {
+            Some(res) => {
+                return res;
+            }
+            None => {}
         }
 
         // There's no existing game, so creating a new one.
-        println!("game {}: creating with the first player {}", game_id, player_id);
+        println!(
+            "game {}: creating with the first player {}",
+            game_id, player_id
+        );
 
         let sname = game_id.to_string();
 
@@ -83,7 +94,13 @@ impl Registry {
     /// Try joining existing game, if any. Returned None means there is no suitable existing game
     /// for us to join, so the caller should create a new one; Some(res) means we either found a
     /// game, or ran into an error; regardless, the caller should just return it further.
-    async fn try_join_game(&self, m: &mut HashMap<String, Arc<GameCtx>>, game_id: &str, player_id: &str, to_player: &mpsc::Sender<PlayerToPlayer>) -> Option<Result<Arc<GameCtx>>> {
+    async fn try_join_game(
+        &self,
+        m: &mut HashMap<String, Arc<GameCtx>>,
+        game_id: &str,
+        player_id: &str,
+        to_player: &mpsc::Sender<PlayerToPlayer>,
+    ) -> Option<Result<Arc<GameCtx>>> {
         match m.get(game_id) {
             Some(v) => {
                 // The game already exists.
@@ -114,11 +131,16 @@ impl Registry {
                 // If both are there, error out; otherwise, add the new player and return the game.
                 if let Some(_) = gd.player_sec {
                     println!("game {} already has both players", game_id);
-                    return Some(Err(anyhow!("game {} already has both players: {} and {}", game_id, gd.player_pri.as_ref().unwrap().id, gd.player_sec.as_ref().unwrap().id)));
+                    return Some(Err(anyhow!(
+                        "game {} already has both players: {} and {}",
+                        game_id,
+                        gd.player_pri.as_ref().unwrap().id,
+                        gd.player_sec.as_ref().unwrap().id
+                    )));
                 }
 
                 // The game only had a single player, so adding this one as the secondary.
-                gd.player_sec = Some(Player{
+                gd.player_sec = Some(Player {
                     id: player_id.to_string(),
                     to: to_player.clone(),
                 });
@@ -132,23 +154,29 @@ impl Registry {
                 // sending fails, which would mean that some player is gone, we ignore it here,
                 // since it'll be handled in the individual connection's loop.
 
-                let _ = to_pri.send(PlayerToPlayer::OpponentIsHere(GameStartOrResume{
-                    to_opponent: to_sec.clone(),
-                    my_side: pri_side,
-                })).await;
+                let _ = to_pri
+                    .send(PlayerToPlayer::OpponentIsHere(GameStartOrResume {
+                        to_opponent: to_sec.clone(),
+                        my_side: pri_side,
+                    }))
+                    .await;
 
-                let _ = to_sec.send(PlayerToPlayer::OpponentIsHere(GameStartOrResume{
-                    to_opponent: to_pri,
-                    my_side: pri_side.opposite(),
-                })).await;
+                let _ = to_sec
+                    .send(PlayerToPlayer::OpponentIsHere(GameStartOrResume {
+                        to_opponent: to_pri,
+                        my_side: pri_side.opposite(),
+                    }))
+                    .await;
 
                 println!("game {}: added new player {}", game_id, player_id);
 
                 return Some(Ok(gc));
-            },
+            }
 
             // If the game doesn't exist yet, let the caller create one.
-            None => { return None; },
+            None => {
+                return None;
+            }
         }
     }
 
@@ -160,7 +188,10 @@ impl Registry {
         match gd.num_players() {
             1 => {
                 // With one player, we just destroy the game, since there are no more players.
-                println!("game {}: removing the last player {}, destroying the game", game_id, player_id);
+                println!(
+                    "game {}: removing the last player {}, destroying the game",
+                    game_id, player_id
+                );
                 assert_eq!(gd.player_pri.as_ref().unwrap().id, player_id);
 
                 m.remove(game_id);
@@ -174,7 +205,10 @@ impl Registry {
                 let player_pri = gd.player_pri.as_ref().unwrap();
                 let player_sec = gd.player_sec.as_ref().unwrap();
                 if player_pri.id == player_id {
-                    println!("game {}: primary player {} is left, setting secondary as the primary", game_id, player_id);
+                    println!(
+                        "game {}: primary player {} is left, setting secondary as the primary",
+                        game_id, player_id
+                    );
                     let _ = player_sec.to.send(PlayerToPlayer::OpponentIsGone).await;
                     gd.sec_to_pri();
                     return;
@@ -187,24 +221,28 @@ impl Registry {
                 gd.player_sec = None;
             }
 
-            _ => { panic!("wrong num players"); }
+            _ => {
+                panic!("wrong num players");
+            }
         }
     }
 }
 
 impl GameCtx {
     fn new(
-        game_id: String, player_id: String, to_player: mpsc::Sender<PlayerToPlayer>,
+        game_id: String,
+        player_id: String,
+        to_player: mpsc::Sender<PlayerToPlayer>,
         game_state: Arc<WSFullGameState>,
     ) -> GameCtx {
-        let player_pri = Player{
+        let player_pri = Player {
             id: player_id,
             to: to_player,
         };
 
-        GameCtx{
+        GameCtx {
             id: game_id,
-            data: Mutex::new(GameData{
+            data: Mutex::new(GameData {
                 player_pri: Some(player_pri),
                 player_sec: None,
 

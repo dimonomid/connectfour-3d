@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{GameManagerToPlayer, GameState, PlayerState, PlayerToGameManager, FullGameState};
+use super::{FullGameState, GameManagerToPlayer, GameState, PlayerState, PlayerToGameManager};
 use crate::game;
 
 use tokio::sync::mpsc;
@@ -52,7 +52,7 @@ impl PlayerLocal {
         // saying that it's our turn, with an empty board.
         if let Some(side) = self.side {
             self.to_gm
-                .send(PlayerToGameManager::SetFullGameState(FullGameState{
+                .send(PlayerToGameManager::SetFullGameState(FullGameState {
                     game_state: GameState::WaitingFor(side),
                     primary_player_side: side,
                     board: game::BoardState::new(),
@@ -94,7 +94,9 @@ impl PlayerLocal {
             GameState::WaitingFor(next_move_side) => {
                 let my_side = match self.side {
                     Some(side) => side,
-                    None => { return Ok(()); }
+                    None => {
+                        return Ok(());
+                    }
                 };
 
                 if my_side != next_move_side {

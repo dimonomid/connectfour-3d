@@ -1,8 +1,8 @@
 pub mod game;
 pub mod game_manager;
 
-use std::sync::Arc;
 use crate::game_manager::GameState;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum WSClientToServer {

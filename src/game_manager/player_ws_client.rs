@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
 
-use super::{GameManagerToPlayer, PlayerState, GameState, PlayerToGameManager, FullGameState};
+use super::{FullGameState, GameManagerToPlayer, GameState, PlayerState, PlayerToGameManager};
 use crate::game;
-use crate::{WSClientToServer, WSClientInfo, WSFullGameState, WSServerToClient};
+use crate::{WSClientInfo, WSClientToServer, WSFullGameState, WSServerToClient};
 
 use tokio::sync::mpsc;
-use tokio::{time};
-use tokio::time::{Duration};
-use tokio_tungstenite::{connect_async};
+use tokio::time;
+use tokio::time::Duration;
+use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite;
 
 #[derive(Debug)]
@@ -47,7 +47,9 @@ impl PlayerWSClient {
     pub async fn run(&mut self) -> Result<()> {
         loop {
             match self.handle_ws_conn().await {
-                Ok(()) => { panic!("should never be ok"); },
+                Ok(()) => {
+                    panic!("should never be ok");
+                }
                 Err(err) => {
                     println!("ws conn error: {}", &err);
                     self.upd_state_not_ready(&err.to_string()).await?;
@@ -68,10 +70,10 @@ impl PlayerWSClient {
 
         let (mut to_ws, mut from_ws) = ws_stream.split();
 
-        let hello = WSClientToServer::Hello(WSClientInfo{
+        let hello = WSClientToServer::Hello(WSClientInfo {
             game_id: Arc::new("mygame".to_string()),
             player_name: Arc::new("me".to_string()), // TODO: OS username
-            game_state: Arc::new(WSFullGameState{
+            game_state: Arc::new(WSFullGameState {
                 game_state: GameState::WaitingFor(game::Side::White),
                 ws_player_side: game::Side::White,
                 board: game::BoardState::new(),
@@ -81,7 +83,8 @@ impl PlayerWSClient {
         let j = serde_json::to_string(&hello)?;
         to_ws.send(tungstenite::Message::Text(j)).await?;
 
-        self.upd_state_not_ready("connected, waiting for the opponent...").await?;
+        self.upd_state_not_ready("connected, waiting for the opponent...")
+            .await?;
 
         loop {
             tokio::select! {
@@ -136,13 +139,14 @@ impl PlayerWSClient {
                     }
                 }
             }
-
         }
     }
 
     pub async fn upd_state_not_ready(&mut self, state: &str) -> Result<()> {
         self.to_gm
-            .send(PlayerToGameManager::StateChanged(PlayerState::NotReady(state.to_string())))
+            .send(PlayerToGameManager::StateChanged(PlayerState::NotReady(
+                state.to_string(),
+            )))
             .await?;
 
         Ok(())

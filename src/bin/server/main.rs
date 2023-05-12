@@ -2,28 +2,30 @@ mod registry;
 
 use anyhow::{anyhow, Result};
 
-use std::{env, io::Error};
 use std::sync::Arc;
-use tokio_tungstenite::{tungstenite, WebSocketStream, tungstenite::protocol::Message};
+use std::{env, io::Error};
+use tokio_tungstenite::{tungstenite, tungstenite::protocol::Message, WebSocketStream};
 
+use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
-use futures_util::stream::{SplitStream, SplitSink};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 
 use std::time::Duration;
-use tokio::{time};
+use tokio::time;
 
-use registry::{Registry, GameCtx};
+use registry::{GameCtx, Registry};
 
-use connectfour::{WSClientToServer, WSServerToClient, WSFullGameState, GameReset};
 use connectfour::game;
 use connectfour::game_manager::GameState;
+use connectfour::{GameReset, WSClientToServer, WSFullGameState, WSServerToClient};
 use registry::PlayerToPlayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let addr = env::args().nth(1).unwrap_or_else(|| "0.0.0.0:7248".to_string());
+    let addr = env::args()
+        .nth(1)
+        .unwrap_or_else(|| "0.0.0.0:7248".to_string());
 
     let try_socket = TcpListener::bind(&addr).await;
     let listener = try_socket.expect("failed to bind");
@@ -39,7 +41,9 @@ async fn main() -> Result<(), Error> {
 }
 
 async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
-    let addr = stream.peer_addr().expect("connected streams should have a peer address");
+    let addr = stream
+        .peer_addr()
+        .expect("connected streams should have a peer address");
     println!("Peer address: {}", addr);
 
     let ws_stream = match tokio_tungstenite::accept_async(stream).await {
@@ -55,7 +59,10 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
     let (mut write, mut read) = ws_stream.split();
 
     // Wait for the hello message.
-    let recv = read.next().await.ok_or(anyhow!("failed to read from ws"))??;
+    let recv = read
+        .next()
+        .await
+        .ok_or(anyhow!("failed to read from ws"))??;
     let msg: WSClientToServer = serde_json::from_str(&recv.to_string())?;
 
     let player_info = match msg {
@@ -63,28 +70,43 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
         v => {
             let j = serde_json::to_string(&WSServerToClient::Msg("expected hello".to_string()))?;
             let _ = write.send(tungstenite::Message::Text(j)).await;
- 
+
             return Err(anyhow!("expected hello, got {:?}", v));
-        },
+        }
     };
 
     let player_id = addr.to_string();
 
     let (to_player_tx, to_player_rx) = mpsc::channel::<PlayerToPlayer>(8);
 
-    let game_ctx = match r.join_or_create_game(
-        &player_info.game_id, &player_id, to_player_tx.clone(),
-        player_info.game_state.clone(),
-        ).await {
+    let game_ctx = match r
+        .join_or_create_game(
+            &player_info.game_id,
+            &player_id,
+            to_player_tx.clone(),
+            player_info.game_state.clone(),
+        )
+        .await
+    {
         Ok(v) => v,
         Err(err) => {
-            let j = serde_json::to_string(&WSServerToClient::Msg(format!("no game for you: {}", err)))?;
+            let j =
+                serde_json::to_string(&WSServerToClient::Msg(format!("no game for you: {}", err)))?;
             let _ = write.send(tungstenite::Message::Text(j)).await;
             return Err(err);
         }
     };
 
-    let leave_msg = match handle_player(game_ctx.clone(), (*player_info.game_state).clone(), &player_id, to_player_rx, write, read).await {
+    let leave_msg = match handle_player(
+        game_ctx.clone(),
+        (*player_info.game_state).clone(),
+        &player_id,
+        to_player_rx,
+        write,
+        read,
+    )
+    .await
+    {
         Ok(()) => format!("ok"),
         Err(err) => format!("err: {}", err),
     };

@@ -1,18 +1,17 @@
 mod gui3d;
 
-use std::thread;
 use std::env;
+use std::thread;
 
 use tokio::sync::mpsc;
-use tokio::{task};
+use tokio::task;
 
-use connectfour::game::{Side};
-use connectfour::game_manager::{
-    GameManager, GameManagerToPlayer, GameManagerToUI,
-    PlayerToGameManager,
-};
+use connectfour::game::Side;
 use connectfour::game_manager::player_local::{PlayerLocal, PlayerLocalToUI};
-use connectfour::game_manager::player_ws_client::{PlayerWSClient};
+use connectfour::game_manager::player_ws_client::PlayerWSClient;
+use connectfour::game_manager::{
+    GameManager, GameManagerToPlayer, GameManagerToUI, PlayerToGameManager,
+};
 
 fn main() {
     let opponent_kind_str = env::args().nth(1).unwrap_or_else(|| "network".to_string());
@@ -23,7 +22,7 @@ fn main() {
         _ => {
             println!("Wrong opponent kind, try local or remote");
             std::process::exit(1);
-        },
+        }
     };
 
     let (gm_to_ui_sender, gm_to_ui_receiver) = mpsc::channel::<GameManagerToUI>(16);
@@ -72,29 +71,20 @@ fn async_runtime(
                         pwhite_to_ui_tx,
                     );
                     p0.run().await?;
-                },
+                }
                 OpponentKind::Network => {
                     let connect_addr = "ws://127.0.0.1:7248";
                     let conn_url = url::Url::parse(&connect_addr).unwrap();
-                    let mut p0 = PlayerWSClient::new(
-                        conn_url,
-                        gm_to_pwhite_rx,
-                        pwhite_to_gm_tx,
-                    );
+                    let mut p0 = PlayerWSClient::new(conn_url, gm_to_pwhite_rx, pwhite_to_gm_tx);
                     p0.run().await?;
-                },
+                }
             }
 
             Ok::<(), anyhow::Error>(())
         });
 
         set.spawn(async {
-            let mut p1 = PlayerLocal::new(
-                None,
-                gm_to_pblack_rx,
-                pblack_to_gm_tx,
-                pblack_to_ui_tx,
-            );
+            let mut p1 = PlayerLocal::new(None, gm_to_pblack_rx, pblack_to_gm_tx, pblack_to_ui_tx);
             p1.run().await?;
 
             Ok::<(), anyhow::Error>(())
@@ -103,10 +93,8 @@ fn async_runtime(
         set.spawn(async {
             let mut gm = GameManager::new(
                 gm_to_ui_sender,
-
                 gm_to_pwhite_tx,
                 pwhite_to_gm_rx,
-
                 gm_to_pblack_tx,
                 pblack_to_gm_rx,
             );
@@ -119,13 +107,20 @@ fn async_runtime(
         // print the errors.
         while let Some(v) = set.join_next().await {
             let res = match v {
-                Err(err) => { println!("task panicked {:?}", err); continue; },
+                Err(err) => {
+                    println!("task panicked {:?}", err);
+                    continue;
+                }
                 Ok(res) => res,
             };
 
             match res {
-                Ok(_) => { println!("task returned ok"); },
-                Err(err) => { println!("task returned error {:?}", err); },
+                Ok(_) => {
+                    println!("task returned ok");
+                }
+                Err(err) => {
+                    println!("task returned error {:?}", err);
+                }
             }
         }
     })

@@ -116,7 +116,7 @@ impl Game {
         for x in 0..ROW_SIZE {
             for z in 0..ROW_SIZE {
                 let row = self.check_win_row(|y| -> CoordsFull {
-                    return CoordsFull{x, y, z};
+                    return CoordsFull { x, y, z };
                 });
                 if let Some(win_row) = row {
                     return Some(win_row);
@@ -128,7 +128,7 @@ impl Game {
         for x in 0..ROW_SIZE {
             for y in 0..ROW_SIZE {
                 let row = self.check_win_row(|z| -> CoordsFull {
-                    return CoordsFull{x, y, z};
+                    return CoordsFull { x, y, z };
                 });
                 if let Some(win_row) = row {
                     return Some(win_row);
@@ -140,7 +140,7 @@ impl Game {
         for z in 0..ROW_SIZE {
             for y in 0..ROW_SIZE {
                 let row = self.check_win_row(|x| -> CoordsFull {
-                    return CoordsFull{x, y, z};
+                    return CoordsFull { x, y, z };
                 });
                 if let Some(win_row) = row {
                     return Some(win_row);
@@ -152,7 +152,7 @@ impl Game {
         for x in 0..ROW_SIZE {
             // Ascending y
             let row = self.check_win_row(|n| -> CoordsFull {
-                return CoordsFull{x, y: n, z: n};
+                return CoordsFull { x, y: n, z: n };
             });
             if let Some(win_row) = row {
                 return Some(win_row);
@@ -160,7 +160,11 @@ impl Game {
 
             // Descending y
             let row = self.check_win_row(|n| -> CoordsFull {
-                return CoordsFull{x, y: ROW_SIZE-1-n, z: n};
+                return CoordsFull {
+                    x,
+                    y: ROW_SIZE - 1 - n,
+                    z: n,
+                };
             });
             if let Some(win_row) = row {
                 return Some(win_row);
@@ -171,7 +175,7 @@ impl Game {
         for z in 0..ROW_SIZE {
             // Ascending y
             let row = self.check_win_row(|n| -> CoordsFull {
-                return CoordsFull{x: n, y: n, z};
+                return CoordsFull { x: n, y: n, z };
             });
             if let Some(win_row) = row {
                 return Some(win_row);
@@ -179,7 +183,11 @@ impl Game {
 
             // Descending y
             let row = self.check_win_row(|n| -> CoordsFull {
-                return CoordsFull{x: n, y: ROW_SIZE-1-n, z};
+                return CoordsFull {
+                    x: n,
+                    y: ROW_SIZE - 1 - n,
+                    z,
+                };
             });
             if let Some(win_row) = row {
                 return Some(win_row);
@@ -190,7 +198,7 @@ impl Game {
         for y in 0..ROW_SIZE {
             // Ascending z
             let row = self.check_win_row(|n| -> CoordsFull {
-                return CoordsFull{x: n, y, z: n};
+                return CoordsFull { x: n, y, z: n };
             });
             if let Some(win_row) = row {
                 return Some(win_row);
@@ -198,7 +206,11 @@ impl Game {
 
             // Descending z
             let row = self.check_win_row(|n| -> CoordsFull {
-                return CoordsFull{x: n, y, z: ROW_SIZE-1-n};
+                return CoordsFull {
+                    x: n,
+                    y,
+                    z: ROW_SIZE - 1 - n,
+                };
             });
             if let Some(win_row) = row {
                 return Some(win_row);
@@ -207,7 +219,7 @@ impl Game {
 
         // 3D diagonal with ascending x, y, z
         let row = self.check_win_row(|n| -> CoordsFull {
-            return CoordsFull{x: n, y: n, z: n};
+            return CoordsFull { x: n, y: n, z: n };
         });
         if let Some(win_row) = row {
             return Some(win_row);
@@ -215,7 +227,11 @@ impl Game {
 
         // 3D diagonal with ascending x, z; descending y
         let row = self.check_win_row(|n| -> CoordsFull {
-            return CoordsFull{x: n, y: ROW_SIZE-1-n, z: n};
+            return CoordsFull {
+                x: n,
+                y: ROW_SIZE - 1 - n,
+                z: n,
+            };
         });
         if let Some(win_row) = row {
             return Some(win_row);
@@ -223,7 +239,11 @@ impl Game {
 
         // 3D diagonal with ascending x, y; descending z
         let row = self.check_win_row(|n| -> CoordsFull {
-            return CoordsFull{x: n, y: n, z: ROW_SIZE-1-n};
+            return CoordsFull {
+                x: n,
+                y: n,
+                z: ROW_SIZE - 1 - n,
+            };
         });
         if let Some(win_row) = row {
             return Some(win_row);
@@ -231,7 +251,11 @@ impl Game {
 
         // 3D diagonal with ascending x; descending y, z
         let row = self.check_win_row(|n| -> CoordsFull {
-            return CoordsFull{x: n, y: ROW_SIZE-1-n, z: ROW_SIZE-1-n};
+            return CoordsFull {
+                x: n,
+                y: ROW_SIZE - 1 - n,
+                z: ROW_SIZE - 1 - n,
+            };
         });
         if let Some(win_row) = row {
             return Some(win_row);
@@ -242,7 +266,7 @@ impl Game {
 
     fn check_win_row(&self, coord_getter: impl Fn(usize) -> CoordsFull) -> Option<WinRow> {
         let mut row_side: Option<Side> = None;
-        let mut row = [CoordsFull{x: 0, y: 0, z: 0}; ROW_SIZE];
+        let mut row = [CoordsFull { x: 0, y: 0, z: 0 }; ROW_SIZE];
 
         for i in 0..ROW_SIZE {
             let coords = coord_getter(i);
@@ -258,14 +282,16 @@ impl Game {
                     if row_side.unwrap() != side {
                         return None;
                     }
-                },
+                }
 
-                None => { return None; }
+                None => {
+                    return None;
+                }
             }
         }
 
         // Winning row!
-        Some(WinRow{
+        Some(WinRow {
             side: row_side.unwrap(),
             row: row,
         })
