@@ -1,10 +1,13 @@
 mod gui3d;
 
-use std::env;
 use std::thread;
+use std::fmt;
+use std::str::FromStr;
 
+use anyhow::{anyhow, Result};
 use tokio::sync::mpsc;
 use tokio::task;
+use clap::Parser;
 
 use connectfour::game::Side;
 use connectfour::game_manager::player_local::{PlayerLocal, PlayerLocalToUI};
@@ -13,23 +16,29 @@ use connectfour::game_manager::{
     GameManager, GameManagerToPlayer, GameManagerToUI, PlayerToGameManager,
 };
 
-fn main() {
-    let opponent_kind_str = env::args().nth(1).unwrap_or_else(|| "network".to_string());
+#[derive(Debug, clap::Parser)]
+struct Cli {
+    #[clap(short = 'o', long = "opponent", default_value_t = OpponentKind::Network)]
+    opponent_kind: OpponentKind,
 
-    let opponent_kind = match opponent_kind_str.as_str() {
-        "local" => OpponentKind::Local,
-        "network" => OpponentKind::Network,
-        _ => {
-            println!("Wrong opponent kind, try local or remote");
-            std::process::exit(1);
-        }
-    };
+    /// URL to use for the network game.
+    #[clap(short = 'u', long = "url", default_value_t = String::from("ws://64.226.98.150:7248"))]
+    url: String,
+
+    /// Game name to use for the network game.
+    #[clap(short = 'g', long = "game", default_value_t = String::from("mygame1"))]
+    game_id: String,
+}
+
+fn main() {
+    let cli_args = Cli::parse();
+    let opponent_kind = cli_args.opponent_kind;
 
     let (gm_to_ui_sender, gm_to_ui_receiver) = mpsc::channel::<GameManagerToUI>(16);
     let (player_to_ui_tx, player_to_ui_rx) = mpsc::channel::<PlayerLocalToUI>(1);
 
     // Setup tokio runtime in another thread.
-    thread::spawn(move || async_runtime(gm_to_ui_sender, player_to_ui_tx, opponent_kind));
+    thread::spawn(move || async_runtime(gm_to_ui_sender, player_to_ui_tx, cli_args));
 
     // Run GUI in the main thread. It's easier since when the user closes the window, the whole
     // thing gets killed (albeit not yet gracefully).
@@ -44,7 +53,7 @@ fn main() {
 fn async_runtime(
     gm_to_ui_sender: mpsc::Sender<GameManagerToUI>,
     player_to_ui_tx: mpsc::Sender<PlayerLocalToUI>,
-    opponent_kind: OpponentKind,
+    cli_args: Cli,
 ) {
     // Every player will need a copy of the sender, so clone it.
     let pwhite_to_ui_tx = player_to_ui_tx.clone();
@@ -62,7 +71,7 @@ fn async_runtime(
         let mut set = task::JoinSet::new();
 
         set.spawn(async move {
-            match opponent_kind {
+            match cli_args.opponent_kind {
                 OpponentKind::Local => {
                     let mut p0 = PlayerLocal::new(
                         Some(Side::White),
@@ -73,9 +82,8 @@ fn async_runtime(
                     p0.run().await?;
                 }
                 OpponentKind::Network => {
-                    let connect_addr = "ws://127.0.0.1:7248";
-                    let conn_url = url::Url::parse(&connect_addr).unwrap();
-                    let mut p0 = PlayerWSClient::new(conn_url, gm_to_pwhite_rx, pwhite_to_gm_tx);
+                    let conn_url = url::Url::parse(&cli_args.url).unwrap();
+                    let mut p0 = PlayerWSClient::new(conn_url, cli_args.game_id, gm_to_pwhite_rx, pwhite_to_gm_tx);
                     p0.run().await?;
                 }
             }
@@ -131,4 +139,26 @@ pub enum OpponentKind {
     Local,
     Network,
     // TODO: AI
+}
+
+impl FromStr for OpponentKind {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "" => Ok(OpponentKind::Local),
+            "local" => Ok(OpponentKind::Local),
+            "network" => Ok(OpponentKind::Network),
+            _ => Err(anyhow!("invalid opponent kind; try 'local' or 'network'")),
+        }
+    }
+}
+
+impl fmt::Display for OpponentKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            OpponentKind::Local => write!(f, "local"),
+            OpponentKind::Network => write!(f, "network"),
+        }
+    }
 }

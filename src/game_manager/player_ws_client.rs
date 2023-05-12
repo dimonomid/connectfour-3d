@@ -23,6 +23,7 @@ pub enum PlayerLocalToUI {
 
 pub struct PlayerWSClient {
     connect_url: url::Url,
+    game_id: String,
 
     side: Option<game::Side>,
 
@@ -33,11 +34,13 @@ pub struct PlayerWSClient {
 impl PlayerWSClient {
     pub fn new(
         connect_url: url::Url,
+        game_id: String,
         from_gm: mpsc::Receiver<GameManagerToPlayer>,
         to_gm: mpsc::Sender<PlayerToGameManager>,
     ) -> PlayerWSClient {
         PlayerWSClient {
             connect_url,
+            game_id,
             side: None,
             from_gm,
             to_gm,
@@ -71,7 +74,7 @@ impl PlayerWSClient {
         let (mut to_ws, mut from_ws) = ws_stream.split();
 
         let hello = WSClientToServer::Hello(WSClientInfo {
-            game_id: Arc::new("mygame".to_string()), // TODO: take from params.
+            game_id: Arc::new(self.game_id.clone()),
             player_name: Arc::new("me".to_string()), // TODO: OS username (but it's actually not used by the server yet).
 
             // TODO: send actual current board state. This way, the game can resume if server was
