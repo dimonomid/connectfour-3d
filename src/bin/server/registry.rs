@@ -60,7 +60,7 @@ impl Registry {
         game_id: &str,
         player_id: &str,
         to_player: mpsc::Sender<PlayerToPlayer>,
-        game_state: Arc<WSFullGameState>,
+        game_state: WSFullGameState,
     ) -> Result<Arc<GameCtx>> {
         let mut m = self.game_by_name.lock().await;
 
@@ -228,7 +228,7 @@ impl GameCtx {
         game_id: String,
         player_id: String,
         to_player: mpsc::Sender<PlayerToPlayer>,
-        game_state: Arc<WSFullGameState>,
+        game_state: WSFullGameState,
     ) -> GameCtx {
         let player_pri = Player {
             id: player_id,

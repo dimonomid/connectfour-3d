@@ -84,7 +84,7 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
             &player_info.game_id,
             &player_id,
             to_player_tx.clone(),
-            player_info.game_state.clone(),
+            player_info.game_state,
         )
         .await
     {
@@ -164,12 +164,12 @@ async fn handle_player(
 
                         let gd = game_ctx.data.lock().await;
                         let game_reset = WSServerToClient::GameReset(GameReset{
-                            opponent_name: Arc::new("my opponent".to_string()), // TODO: actual name
-                            game_state: Arc::new(WSFullGameState{
+                            opponent_name: "my opponent".to_string(), // TODO: actual name
+                            game_state: WSFullGameState{
                                 game_state: gd.game_state,
                                 ws_player_side: side,
                                 board: gd.game.get_board().clone(),
-                            }),
+                            },
                         });
 
                         drop(gd);

@@ -1,7 +1,5 @@
 use anyhow::{anyhow, Result};
 
-use std::sync::Arc;
-
 use futures_util::{SinkExt, StreamExt};
 
 use super::{FullGameState, GameManagerToPlayer, GameState, PlayerState, PlayerToGameManager};
@@ -77,16 +75,16 @@ impl PlayerWSClient {
         let (mut to_ws, mut from_ws) = ws_stream.split();
 
         let hello = WSClientToServer::Hello(WSClientInfo {
-            game_id: Arc::new(self.game_id.clone()),
-            player_name: Arc::new("me".to_string()), // TODO: OS username (but it's actually not used by the server yet).
+            game_id: self.game_id.clone(),
+            player_name: "me".to_string(), // TODO: OS username (but it's actually not used by the server yet).
 
             // TODO: send actual current board state. This way, the game can resume if server was
             // rebooted while both clients kept running and eventually reconnected.
-            game_state: Arc::new(WSFullGameState {
+            game_state: WSFullGameState {
                 game_state: GameState::WaitingFor(game::Side::White),
                 ws_player_side: game::Side::White,
                 board: game::BoardState::new(),
-            }),
+            },
         });
 
         let j = serde_json::to_string(&hello)?;

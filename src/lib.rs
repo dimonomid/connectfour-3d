@@ -2,7 +2,6 @@ pub mod game;
 pub mod game_manager;
 
 use crate::game_manager::GameState;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum WSClientToServer {
@@ -21,17 +20,17 @@ pub enum WSServerToClient {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WSClientInfo {
-    pub game_id: Arc<String>,
-    pub player_name: Arc<String>,
+    pub game_id: String,
+    pub player_name: String,
 
-    pub game_state: Arc<WSFullGameState>,
+    pub game_state: WSFullGameState,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameReset {
-    pub opponent_name: Arc<String>,
+    pub opponent_name: String,
 
-    pub game_state: Arc<WSFullGameState>,
+    pub game_state: WSFullGameState,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
