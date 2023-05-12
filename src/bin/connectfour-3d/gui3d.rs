@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use std::vec::Vec;
 
 use kiss3d::camera::{ArcBall, Camera};
-use kiss3d::event::{Action, Event, MouseButton, WindowEvent, Key};
+use kiss3d::event::{Action, Event, Key, MouseButton, WindowEvent};
 use kiss3d::light::Light;
 use kiss3d::nalgebra::{Point2, Point3, Translation3, Vector2, Vector3};
 use kiss3d::scene::SceneNode;
@@ -183,7 +183,9 @@ impl Window3D {
 
             // If some tokens need to be flashed, flash them every FLASH_DUR_MS ms.
             let now = Instant::now();
-            let dur = now.saturating_duration_since(self.last_flash_time).as_millis();
+            let dur = now
+                .saturating_duration_since(self.last_flash_time)
+                .as_millis();
             if dur >= FLASH_DUR_MS {
                 self.last_flash_time = self.last_flash_time.checked_add(FLASH_DUR).unwrap();
                 self.flash_show = !self.flash_show;
