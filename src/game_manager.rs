@@ -207,8 +207,8 @@ impl GameManager {
                 self.handle_player_state_change(i, state).await?;
                 Ok(())
             }
-            PlayerToGameManager::PutToken(coords) => {
-                self.handle_player_put_token(i, coords).await?;
+            PlayerToGameManager::PutToken(pcoords) => {
+                self.handle_player_put_token(i, pcoords).await?;
                 Ok(())
             }
         }
@@ -217,11 +217,11 @@ impl GameManager {
     pub async fn handle_player_put_token(
         &mut self,
         i: usize,
-        coords: game::PoleCoords,
+        pcoords: game::PoleCoords,
     ) -> Result<()> {
         let side = self.players[i].side;
 
-        println!("GM: player {:?} put token {:?}", side, coords);
+        println!("GM: player {:?} put token {:?}", side, pcoords);
 
         let next_move_side = match self.game_state.unwrap() {
             GameState::WaitingFor(side) => side,
@@ -250,7 +250,7 @@ impl GameManager {
             return Ok(());
         }
 
-        let res = match self.game.put_token(player_side, coords.x, coords.z) {
+        let res = match self.game.put_token(player_side, pcoords) {
             Ok(res) => res,
             Err(err) => {
                 println!("can't put: {}", err);
@@ -264,9 +264,9 @@ impl GameManager {
             .send(GameManagerToUI::SetToken(
                 player_side,
                 game::TokenCoords {
-                    x: coords.x,
+                    x: pcoords.x,
                     y: res.y,
-                    z: coords.z,
+                    z: pcoords.z,
                 },
             ))
             .await
@@ -277,7 +277,7 @@ impl GameManager {
         self.player_by_side(opposite_side)
             .unwrap()
             .to
-            .send(GameManagerToPlayer::OpponentPutToken(coords))
+            .send(GameManagerToPlayer::OpponentPutToken(pcoords))
             .await?;
 
         if res.won {

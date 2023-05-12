@@ -133,10 +133,10 @@ async fn handle_player(
                 let msg: WSClientToServer = serde_json::from_str(&recv.to_string())?;
                 match msg {
                     WSClientToServer::Hello(_) => { return Err(anyhow!("did not expect hello")); }
-                    WSClientToServer::PutToken(coords) => {
+                    WSClientToServer::PutToken(tcoords) => {
                         let mut gd = game_ctx.data.lock().await;
 
-                        gd.game.put_token(side.opposite(), coords.x, coords.z)?;
+                        gd.game.put_token(side.opposite(), tcoords)?;
                         gd.game_state = GameState::WaitingFor(side);
                         drop(gd);
 
@@ -149,7 +149,7 @@ async fn handle_player(
                             },
                         };
 
-                        let _ = to_opponent.send(PlayerToPlayer::PutToken(coords)).await;
+                        let _ = to_opponent.send(PlayerToPlayer::PutToken(tcoords)).await;
                     },
                 }
             }
@@ -184,10 +184,10 @@ async fn handle_player(
                         to_ws.send(tungstenite::Message::Text(j)).await?;
                     }
 
-                    PlayerToPlayer::PutToken(coords) => {
-                        println!("received PutToken({:?})", coords);
+                    PlayerToPlayer::PutToken(tcoords) => {
+                        println!("received PutToken({:?})", tcoords);
 
-                        let put_token = WSServerToClient::PutToken(coords);
+                        let put_token = WSServerToClient::PutToken(tcoords);
                         let j = serde_json::to_string(&put_token)?;
                         to_ws.send(tungstenite::Message::Text(j)).await?;
                     },

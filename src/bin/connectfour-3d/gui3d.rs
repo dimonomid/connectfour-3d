@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use std::vec::Vec;
 
 use super::OpponentKind;
-use connectfour::game::{PoleCoords, Side, WinRow, ROW_SIZE};
+use connectfour::game::{PoleCoords, TokenCoords, Side, WinRow, ROW_SIZE};
 use connectfour::game_manager::player_local::PlayerLocalToUI;
 use connectfour::game_manager::{GameManagerToUI, GameState, PlayerState};
 use ordered_float::OrderedFloat;
@@ -145,7 +145,7 @@ impl Window3D {
             for z in 0..ROW_SIZE {
                 let mut pole = self.w.add_cylinder(POLE_RADIUS, POLE_HEIGHT);
 
-                pole.set_local_translation(Self::pole_translation(x, z));
+                pole.set_local_translation(Self::pole_translation(PoleCoords::new(x, z)));
                 pole.set_color(1.0, 1.0, 0.0);
             }
         }
@@ -175,8 +175,8 @@ impl Window3D {
 
                 // Going to try to add a token.
 
-                let coords = match self.mouse_coords_to_game_xz(self.last_pos) {
-                    Some(coords) => coords,
+                let pcoords = match self.mouse_coords_to_pole_coords(self.last_pos) {
+                    Some(pcoords) => pcoords,
                     None => return,
                 };
 
@@ -185,10 +185,7 @@ impl Window3D {
                     .as_ref()
                     .expect("no pending_input")
                     .coord_sender
-                    .try_send(PoleCoords {
-                        x: coords.0,
-                        z: coords.1,
-                    }) {
+                    .try_send(pcoords) {
                     Ok(_) => {
                         self.pending_input = None;
                     }
@@ -217,14 +214,14 @@ impl Window3D {
             return;
         }
 
-        let coords = match self.mouse_coords_to_game_xz(self.last_pos) {
-            Some(coords) => coords,
+        let pcoords = match self.mouse_coords_to_pole_coords(self.last_pos) {
+            Some(pcoords) => pcoords,
             None => {
                 self.pole_pointer.set_visible(false);
                 return;
             }
         };
-        let mut pole_top_t = Self::pole_translation(coords.0, coords.1);
+        let mut pole_top_t = Self::pole_translation(pcoords);
         pole_top_t.y += POLE_HEIGHT / 2.0;
 
         //let v = self.mouse_coords_to_pole_translation(self.last_pos);
@@ -252,8 +249,8 @@ impl Window3D {
                 flash_show = !flash_show;
 
                 if let Some(win_row) = &self.win_row {
-                    for coords in win_row.row {
-                        self.tokens[Self::coord_to_idx(coords.x, coords.y, coords.z)]
+                    for tcoords in win_row.row {
+                        self.tokens[Self::token_coords_to_idx(tcoords)]
                             .as_mut()
                             .unwrap()
                             .set_visible(flash_show);
@@ -273,8 +270,8 @@ impl Window3D {
             println!("hey received from GM: {:?}", &msg);
 
             match msg {
-                GameManagerToUI::SetToken(side, coords) => {
-                    self.add_token(side, coords.x, coords.y, coords.z);
+                GameManagerToUI::SetToken(side, tcoords) => {
+                    self.add_token(side, tcoords);
                 }
                 GameManagerToUI::ResetBoard(board) => {
                     for maybe_token in &mut self.tokens {
@@ -290,13 +287,13 @@ impl Window3D {
                     for x in 0..ROW_SIZE {
                         for y in 0..ROW_SIZE {
                             for z in 0..ROW_SIZE {
-                                if let Some(side) = board.get(x, y, z) {
-                                    self.add_token(side, x, y, z);
+                                let tcoords = TokenCoords::new(x, y, z);
+                                if let Some(side) = board.get(tcoords) {
+                                    self.add_token(side, tcoords);
                                 }
                             }
                         }
                     }
-                    //self.add_token(side, coords.x, coords.y, coords.z);
                 }
 
                 GameManagerToUI::PlayerStateChanged(i, state) => {
@@ -461,16 +458,16 @@ impl Window3D {
         false
     }
 
-    fn pole_translation(x: usize, z: usize) -> Translation3<f32> {
-        let xcoord = MARGIN + x as f32 * POLE_SPACING - FOUNDATION_WIDTH / 2.0;
-        let zcoord = MARGIN + z as f32 * POLE_SPACING - FOUNDATION_WIDTH / 2.0;
+    fn pole_translation(pcoords: PoleCoords) -> Translation3<f32> {
+        let xcoord = MARGIN + pcoords.x as f32 * POLE_SPACING - FOUNDATION_WIDTH / 2.0;
+        let zcoord = MARGIN + pcoords.z as f32 * POLE_SPACING - FOUNDATION_WIDTH / 2.0;
 
         Translation3::new(xcoord, 0.0, zcoord)
     }
 
-    fn token_translation(x: usize, y: usize, z: usize) -> Translation3<f32> {
-        let mut t = Self::pole_translation(x, z);
-        t.y = -POLE_HEIGHT / 2.0 + TOKEN_HEIGHT / 2.0 + TOKEN_HEIGHT * (y as f32);
+    fn token_translation(tcoords: TokenCoords) -> Translation3<f32> {
+        let mut t = Self::pole_translation(tcoords.pole_coords());
+        t.y = -POLE_HEIGHT / 2.0 + TOKEN_HEIGHT / 2.0 + TOKEN_HEIGHT * (tcoords.y as f32);
 
         t
     }
@@ -517,18 +514,18 @@ impl Window3D {
         Self::top_plane_intersect(&ray.0, &ray.1)
     }
 
-    fn pole_translation_to_game_xz(t: Point3<f32>) -> Option<(usize, usize)> {
+    fn pole_translation_to_pole_coords(t: Point3<f32>) -> Option<PoleCoords> {
         const TOLERANCE: f32 = POLE_RADIUS * 1.5;
 
         for x in 0..ROW_SIZE {
             for z in 0..ROW_SIZE {
-                let cur_t = Self::pole_translation(x, z);
+                let cur_t = Self::pole_translation(PoleCoords::new(x, z));
                 if t.x >= cur_t.x - TOLERANCE
                     && t.x <= cur_t.x + TOLERANCE
                     && t.z >= cur_t.z - TOLERANCE
                     && t.z <= cur_t.z + TOLERANCE
                 {
-                    return Some((x, z));
+                    return Some(PoleCoords::new(x, z));
                 }
             }
         }
@@ -536,22 +533,22 @@ impl Window3D {
         None
     }
 
-    fn mouse_coords_to_game_xz(&self, mouse_pt: Point2<f32>) -> Option<(usize, usize)> {
+    fn mouse_coords_to_pole_coords(&self, mouse_pt: Point2<f32>) -> Option<PoleCoords> {
         let v = self.mouse_coords_to_pole_translation(mouse_pt)?;
-        Self::pole_translation_to_game_xz(v)
+        Self::pole_translation_to_pole_coords(v)
     }
 
-    fn add_token(&mut self, side: Side, x: usize, y: usize, z: usize) {
+    fn add_token(&mut self, side: Side, tcoords: TokenCoords) {
         let mut s = self.w.add_sphere(TOKEN_RADIUS);
         let c = Self::color_by_side(side);
         s.set_color(c.0, c.1, c.2);
-        s.set_local_translation(Self::token_translation(x, y, z));
+        s.set_local_translation(Self::token_translation(tcoords));
 
-        self.tokens[Self::coord_to_idx(x, y, z)] = Some(s);
+        self.tokens[Self::token_coords_to_idx(tcoords)] = Some(s);
     }
 
-    fn coord_to_idx(x: usize, y: usize, z: usize) -> usize {
-        x + y * ROW_SIZE + z * ROW_SIZE * ROW_SIZE
+    fn token_coords_to_idx(tcoords: TokenCoords) -> usize {
+        tcoords.x + tcoords.y * ROW_SIZE + tcoords.z * ROW_SIZE * ROW_SIZE
     }
 
     fn color_by_side(side: Side) -> (f32, f32, f32) {

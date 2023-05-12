@@ -81,9 +81,9 @@ impl PlayerLocal {
                     }
                 }
 
-                Some(coords) = self.coords_from_ui_receiver.recv() => {
-                    println!("got coords from UI: {:?}", &coords);
-                    self.to_gm.send(PlayerToGameManager::PutToken(coords)).await?;
+                Some(pcoords) = self.coords_from_ui_receiver.recv() => {
+                    println!("got pole coords from UI: {:?}", &pcoords);
+                    self.to_gm.send(PlayerToGameManager::PutToken(pcoords)).await?;
                 }
             }
         }

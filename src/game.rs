@@ -63,6 +63,20 @@ impl PoleCoords {
     pub fn new(x: usize, z: usize) -> PoleCoords {
         PoleCoords { x, z }
     }
+
+    pub fn token_coords(&self, y: usize) -> TokenCoords {
+        TokenCoords { x: self.x, y, z: self.z }
+    }
+}
+
+impl TokenCoords {
+    pub fn new(x: usize, y: usize, z: usize) -> TokenCoords {
+        TokenCoords { x, y, z }
+    }
+
+    pub fn pole_coords(&self) -> PoleCoords {
+        PoleCoords { x: self.x, z: self.z }
+    }
 }
 
 impl Game {
@@ -78,8 +92,8 @@ impl Game {
     /// will be returned in the result, if successful.
     ///
     /// An error is returned if the given pole is full, or if someone won the game already.
-    pub fn put_token(&mut self, side: Side, x: usize, z: usize) -> Result<PutResult> {
-        panic_if_out_of_bounds(x, 0, z);
+    pub fn put_token(&mut self, side: Side, pcoords: PoleCoords) -> Result<PutResult> {
+        panic_if_out_of_bounds(pcoords.x, 0, pcoords.z);
 
         // Make sure there is no winner yet.
         if let Some(win_row) = &self.win_row {
@@ -87,9 +101,10 @@ impl Game {
         }
 
         for y in 0..ROW_SIZE {
-            match self.board.get(x, y, z) {
+            let tcoords = pcoords.token_coords(y);
+            match self.board.get(tcoords) {
                 None => {
-                    self.board.set(side, x, y, z);
+                    self.board.set(side, tcoords);
                     self.win_row = self.check_win();
 
                     return Ok(PutResult {
@@ -104,12 +119,12 @@ impl Game {
         }
 
         // The pole is full.
-        Err(anyhow!("pole {}, {} is full", x, z))
+        Err(anyhow!("pole {}, {} is full", pcoords.x, pcoords.z))
     }
 
     /// Get the token (if any) with the given coords X, Y, Z.
-    pub fn get_token(&self, x: usize, y: usize, z: usize) -> Option<Side> {
-        self.board.get(x, y, z)
+    pub fn get_token(&self, tcoords: TokenCoords) -> Option<Side> {
+        self.board.get(tcoords)
     }
 
     /// Return current board state.
@@ -287,17 +302,17 @@ impl Game {
         None
     }
 
-    /// A helper to check if a single row is full of tokens of the same size. The coord_getter
+    /// A helper to check if a single row is full of tokens of the same size. The tcoord_getter
     /// callback takes an index from 0 to ROW_SIZE-1, and returns full coords for that token.
-    fn check_win_row(&self, coord_getter: impl Fn(usize) -> TokenCoords) -> Option<WinRow> {
+    fn check_win_row(&self, tcoord_getter: impl Fn(usize) -> TokenCoords) -> Option<WinRow> {
         let mut row_side: Option<Side> = None;
         let mut row = [TokenCoords { x: 0, y: 0, z: 0 }; ROW_SIZE];
 
         for i in 0..ROW_SIZE {
-            let coords = coord_getter(i);
-            match self.get_token(coords.x, coords.y, coords.z) {
+            let tcoords = tcoord_getter(i);
+            match self.get_token(tcoords) {
                 Some(side) => {
-                    row[i] = coords;
+                    row[i] = tcoords;
 
                     // On the first token, just remember the row size.
                     if i == 0 {
@@ -335,19 +350,19 @@ impl BoardState {
     }
 
     /// Get a token with the given coords. If coords are outside of the board size, it panics.
-    pub fn get(&self, x: usize, y: usize, z: usize) -> Option<Side> {
-        panic_if_out_of_bounds(x, y, z);
+    pub fn get(&self, tcoords: TokenCoords) -> Option<Side> {
+        panic_if_out_of_bounds(tcoords.x, tcoords.y, tcoords.z);
 
-        *self.tokens.get(Self::coord_to_idx(x, y, z)).unwrap()
+        *self.tokens.get(Self::coord_to_idx(tcoords)).unwrap()
     }
 
     /// Set a token of the given side on the given coords. If coords are outside of the board size,
     /// it panics. Other than that, no validation is done, so technically one can set e.g. a
     /// hanging token.
-    pub fn set(&mut self, side: Side, x: usize, y: usize, z: usize) {
-        panic_if_out_of_bounds(x, y, z);
+    pub fn set(&mut self, side: Side, tcoords: TokenCoords) {
+        panic_if_out_of_bounds(tcoords.x, tcoords.y, tcoords.z);
 
-        self.tokens[Self::coord_to_idx(x, y, z)] = Some(side);
+        self.tokens[Self::coord_to_idx(tcoords)] = Some(side);
     }
 
     /// Copy data from another board. Existing data is discarded.
@@ -356,8 +371,8 @@ impl BoardState {
     }
 
     /// A helper to convert token coords X, Y, Z into an index in the slice.
-    fn coord_to_idx(x: usize, y: usize, z: usize) -> usize {
-        x + y * ROW_SIZE + z * ROW_SIZE * ROW_SIZE
+    fn coord_to_idx(tcoords: TokenCoords) -> usize {
+        tcoords.x + tcoords.y * ROW_SIZE + tcoords.z * ROW_SIZE * ROW_SIZE
     }
 }
 

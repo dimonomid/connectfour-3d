@@ -126,8 +126,8 @@ impl PlayerWSClient {
                                 }))
                                 .await?;
                         }
-                        WSServerToClient::PutToken(coords) => {
-                            self.to_gm.send(PlayerToGameManager::PutToken(coords)).await?;
+                        WSServerToClient::PutToken(pcoords) => {
+                            self.to_gm.send(PlayerToGameManager::PutToken(pcoords)).await?;
                         }
                         WSServerToClient::OpponentIsGone => {
                             self.upd_state_not_ready("opponent disconnected, waiting...").await?;
@@ -142,8 +142,8 @@ impl PlayerWSClient {
                         GameManagerToPlayer::Reset(_board, new_side) => {
                             self.side = Some(new_side);
                         },
-                        GameManagerToPlayer::OpponentPutToken(coords) => {
-                            let msg = WSClientToServer::PutToken(coords);
+                        GameManagerToPlayer::OpponentPutToken(pcoords) => {
+                            let msg = WSClientToServer::PutToken(pcoords);
                             let j = serde_json::to_string(&msg)?;
                             to_ws.send(tungstenite::Message::Text(j)).await?;
                         },
