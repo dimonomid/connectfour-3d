@@ -442,7 +442,6 @@ impl Window3D {
                     &Point3::new(1.0, 1.0, 1.0),
                 );
             },
-            Some(GameState::WaitingFor(_)) => {},
         }
 
         true
@@ -584,16 +583,6 @@ impl Window3D {
         }
 
         s
-    }
-
-    fn player_by_side(&self, side: Side) -> Option<&PlayerInfo> {
-        for p in &self.players {
-            if p.side == Some(side) {
-                return Some(p);
-            }
-        }
-
-        return None
     }
 }
 

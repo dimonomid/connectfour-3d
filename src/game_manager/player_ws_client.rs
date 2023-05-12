@@ -6,12 +6,12 @@ use futures_util::{SinkExt, StreamExt};
 
 use super::{GameManagerToPlayer, PlayerState, GameState, PlayerToGameManager, FullGameState};
 use crate::game;
-use crate::{WSClientToServer, WSClientInfo, WSFullGameState, WSServerToClient, GameReset};
+use crate::{WSClientToServer, WSClientInfo, WSFullGameState, WSServerToClient};
 
 use tokio::sync::mpsc;
 use tokio::{time};
 use tokio::time::{Duration};
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{connect_async};
 use tokio_tungstenite::tungstenite;
 
 #[derive(Debug)]
@@ -50,7 +50,7 @@ impl PlayerWSClient {
                 Ok(()) => { panic!("should never be ok"); },
                 Err(err) => {
                     println!("ws conn error: {}", &err);
-                    self.upd_state_not_ready(&err.to_string());
+                    self.upd_state_not_ready(&err.to_string()).await?;
                 }
             }
 
@@ -59,12 +59,12 @@ impl PlayerWSClient {
     }
 
     pub async fn handle_ws_conn(&mut self) -> Result<()> {
-        self.upd_state_not_ready("connecting to server...").await;
+        self.upd_state_not_ready("connecting to server...").await?;
 
         let (ws_stream, _) = connect_async(&self.connect_url).await?;
         println!("WebSocket handshake has been successfully completed");
 
-        self.upd_state_not_ready("authenticating...").await;
+        self.upd_state_not_ready("authenticating...").await?;
 
         let (mut to_ws, mut from_ws) = ws_stream.split();
 

@@ -67,7 +67,7 @@ impl Game {
 
         // Make sure there is no winner yet.
         if let Some(win_row) = &self.win_row {
-            return Err(anyhow!("there is a winner already"))
+            return Err(anyhow!("there is a winner already: {:?}", win_row.side));
         }
 
         for y in 0..ROW_SIZE {
