@@ -97,19 +97,13 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
         }
     };
 
-    let leave_msg = match handle_player(
-        game_ctx.clone(),
-        (*player_info.game_state).clone(),
-        &player_id,
-        to_player_rx,
-        write,
-        read,
-    )
-    .await
-    {
-        Ok(()) => format!("ok"),
-        Err(err) => format!("err: {}", err),
-    };
+    let leave_msg =
+        match handle_player(game_ctx.clone(), &player_id, to_player_rx, write, read).await {
+            Ok(()) => {
+                panic!("should never happen");
+            }
+            Err(err) => format!("err: {}", err),
+        };
 
     r.leave_game(&player_info.game_id, &player_id).await;
 
@@ -118,7 +112,6 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
 
 async fn handle_player(
     game_ctx: Arc<GameCtx>,
-    game_state: WSFullGameState,
     player_id: &str,
     mut from_opponent: mpsc::Receiver<PlayerToPlayer>,
     mut to_ws: SplitSink<WebSocketStream<tokio::net::TcpStream>, Message>,
@@ -142,7 +135,8 @@ async fn handle_player(
                     WSClientToServer::Hello(_) => { return Err(anyhow!("did not expect hello")); }
                     WSClientToServer::PutToken(coords) => {
                         let mut gd = game_ctx.data.lock().await;
-                        gd.game.put_token(side.opposite(), coords.x, coords.z);
+
+                        gd.game.put_token(side.opposite(), coords.x, coords.z)?;
                         gd.game_state = GameState::WaitingFor(side);
                         drop(gd);
 
@@ -168,7 +162,7 @@ async fn handle_player(
                         maybe_to_opponent = Some(v.to_opponent);
                         side = v.my_side;
 
-                        let mut gd = game_ctx.data.lock().await;
+                        let gd = game_ctx.data.lock().await;
                         let game_reset = WSServerToClient::GameReset(GameReset{
                             opponent_name: Arc::new("my opponent".to_string()), // TODO: actual name
                             game_state: Arc::new(WSFullGameState{
@@ -206,6 +200,4 @@ async fn handle_player(
             }
         }
     }
-
-    Ok(())
 }

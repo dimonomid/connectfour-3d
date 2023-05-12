@@ -71,8 +71,11 @@ impl PlayerWSClient {
         let (mut to_ws, mut from_ws) = ws_stream.split();
 
         let hello = WSClientToServer::Hello(WSClientInfo {
-            game_id: Arc::new("mygame".to_string()),
-            player_name: Arc::new("me".to_string()), // TODO: OS username
+            game_id: Arc::new("mygame".to_string()), // TODO: take from params.
+            player_name: Arc::new("me".to_string()), // TODO: OS username (but it's actually not used by the server yet).
+
+            // TODO: send actual current board state. This way, the game can resume if server was
+            // rebooted while both clients kept running and eventually reconnected.
             game_state: Arc::new(WSFullGameState {
                 game_state: GameState::WaitingFor(game::Side::White),
                 ws_player_side: game::Side::White,

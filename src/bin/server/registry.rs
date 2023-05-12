@@ -240,15 +240,18 @@ impl GameCtx {
             to: to_player,
         };
 
+        let mut g = game::Game::new();
+        g.reset_board(&game_state.board);
+
         GameCtx {
             id: game_id,
             data: Mutex::new(GameData {
                 player_pri: Some(player_pri),
                 player_sec: None,
 
-                game_state: GameState::WaitingFor(game::Side::White),
-                player_pri_side: game::Side::White,
-                game: game::Game::new(),
+                game_state: game_state.game_state,
+                player_pri_side: game_state.ws_player_side,
+                game: g,
             }),
         }
     }
