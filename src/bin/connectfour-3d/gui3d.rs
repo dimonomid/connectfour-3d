@@ -388,22 +388,31 @@ impl Window3D {
                 );
             }
 
-            Some(GameState::WaitingFor(side)) => {
+            Some(GameState::WaitingFor(waiting_for_side)) => {
                 match self.opponent_kind {
                     OpponentKind::Local => {
                         // Nothing special to write here in local mode.
                     }
                     OpponentKind::Network => {
                         let player_local = &self.players[1];
-                        if player_local.side == Some(side) {
-                            self.w.draw_text(
-                                "Your turn",
-                                &Point2::new(10.0, 100.0),
-                                60.0,
-                                &self.font,
-                                &Point3::new(1.0, 1.0, 1.0),
-                            );
+                        let text;
+                        let color;
+
+                        if player_local.side == Some(waiting_for_side) {
+                            text = "Your turn";
+                            color = Point3::new(1.0, 1.0, 1.0);
+                        } else {
+                            text = "Opponent's turn";
+                            color = Point3::new(0.5, 0.5, 0.5);
                         }
+
+                        self.w.draw_text(
+                            text,
+                            &Point2::new(10.0, 100.0),
+                            60.0,
+                            &self.font,
+                            &color,
+                        );
                     }
                 }
             }
