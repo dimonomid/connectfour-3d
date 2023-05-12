@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use std::vec::Vec;
 
 use kiss3d::camera::{ArcBall, Camera};
-use kiss3d::event::{Action, Event, MouseButton, WindowEvent};
+use kiss3d::event::{Action, Event, MouseButton, WindowEvent, Key};
 use kiss3d::light::Light;
 use kiss3d::nalgebra::{Point2, Point3, Translation3, Vector2, Vector3};
 use kiss3d::scene::SceneNode;
@@ -40,6 +40,9 @@ const POLES_TOP_Y: f32 = POLE_HEIGHT / 2.0;
 const FLASH_DUR_MS: u128 = 200;
 const FLASH_DUR: Duration = Duration::from_millis(FLASH_DUR_MS as u64);
 
+/// How many times to flash the last token.
+const LAST_TOKEN_NUM_FLASHES: usize = 2;
+
 pub struct Window3D {
     w: Window,
     font: Rc<Font>,
@@ -66,6 +69,17 @@ pub struct Window3D {
     /// it's true, on the mouse release we will not interpret it as "put token
     /// here".
     rotating: bool,
+
+    /// Last token that was added, if any. Needed because we need to flash it a
+    /// little bit.
+    last_token: Option<TokenCoords>,
+    /// How many flashes are remaining for the last token.
+    last_token_num_flash: usize,
+
+    /// Last time when we changed the visibility of flashing tokens.
+    last_flash_time: Instant,
+    /// Whether flashing tokens are currently visible.
+    flash_show: bool,
 
     from_gm: mpsc::Receiver<GameManagerToUI>,
     from_players: mpsc::Receiver<PlayerLocalToUI>,
@@ -122,6 +136,10 @@ impl Window3D {
             pending_input: None,
             mouse_down: false,
             rotating: false,
+            last_token: None,
+            last_token_num_flash: 0,
+            last_flash_time: Instant::now(),
+            flash_show: true,
             from_gm,
             from_players,
             last_mouse_coords: Point2::new(0.0f32, 0.0f32),
@@ -153,9 +171,6 @@ impl Window3D {
     /// to re-render. So for now, we do what all examples in kiss3d are doing:
     /// just keeps rendering all the time.
     pub fn run(&mut self) {
-        let mut last_flash_time = Instant::now();
-        let mut flash_show = true;
-
         while self.render() {
             // Handle keyboard and mouse events (apart from rotating the model,
             // zooming etc - this one is taken care of automatically).
@@ -168,17 +183,32 @@ impl Window3D {
 
             // If some tokens need to be flashed, flash them every FLASH_DUR_MS ms.
             let now = Instant::now();
-            let dur = now.saturating_duration_since(last_flash_time).as_millis();
+            let dur = now.saturating_duration_since(self.last_flash_time).as_millis();
             if dur >= FLASH_DUR_MS {
-                last_flash_time = last_flash_time.checked_add(FLASH_DUR).unwrap();
-                flash_show = !flash_show;
+                self.last_flash_time = self.last_flash_time.checked_add(FLASH_DUR).unwrap();
+                self.flash_show = !self.flash_show;
 
+                // Flash last token, if needed
+                if self.last_token_num_flash > 0 {
+                    if let Some(last_token) = self.last_token {
+                        self.tokens[Self::token_coords_to_idx(last_token)]
+                            .as_mut()
+                            .unwrap()
+                            .set_visible(self.flash_show);
+
+                        if self.flash_show {
+                            self.last_token_num_flash -= 1;
+                        }
+                    }
+                }
+
+                // Flash win row, if any
                 if let Some(win_row) = &self.win_row {
                     for tcoords in win_row.row {
                         self.tokens[Self::token_coords_to_idx(tcoords)]
                             .as_mut()
                             .unwrap()
-                            .set_visible(flash_show);
+                            .set_visible(self.flash_show);
                     }
                 }
             }
@@ -261,6 +291,19 @@ impl Window3D {
 
                 self.update_pole_pointer();
             }
+
+            WindowEvent::Key(Key::L, _action, _modif) => {
+                if let Some(last_token) = self.last_token {
+                    // Call set_last_token with an already existing token, just to
+                    // cause it to flash,
+                    self.set_last_token(last_token);
+
+                    // but adjust the last_flash_time to be one flashing period
+                    // ago, so that we'll make it invisible right away.
+                    self.last_flash_time = self.last_flash_time.checked_sub(FLASH_DUR).unwrap();
+                }
+            }
+
             _ => {}
         }
     }
@@ -307,6 +350,7 @@ impl Window3D {
             match msg {
                 GameManagerToUI::SetToken(side, tcoords) => {
                     self.add_token(side, tcoords);
+                    self.set_last_token(tcoords);
                 }
                 GameManagerToUI::ResetBoard(board) => {
                     for maybe_token in &mut self.tokens {
@@ -317,6 +361,7 @@ impl Window3D {
                     }
 
                     self.win_row = None;
+                    self.last_token = None;
 
                     // TODO: reimplement as an iterator exposed by the board.
                     for x in 0..ROW_SIZE {
@@ -479,6 +524,15 @@ impl Window3D {
             }
         }
 
+        // Write some hint about the controls, at the bottom.
+        self.w.draw_text(
+            "Left mouse btn: rotate, Right mouse btn: move, Enter: center, L: flash last token",
+            &Point2::new(10.0, self.w.size()[1] as f32 * 2.0 - 50.0),
+            35.0,
+            &self.font,
+            &Point3::new(0.0, 1.0, 0.0),
+        );
+
         true
     }
 
@@ -591,6 +645,15 @@ impl Window3D {
         s.set_local_translation(Self::token_translation(tcoords));
 
         self.tokens[Self::token_coords_to_idx(tcoords)] = Some(s);
+    }
+
+    /// Remember which token was set last. Needed because we need to flash it a
+    /// little bit.
+    fn set_last_token(&mut self, tcoords: TokenCoords) {
+        self.last_token = Some(tcoords);
+        self.last_token_num_flash = LAST_TOKEN_NUM_FLASHES;
+        self.last_flash_time = Instant::now();
+        self.flash_show = true;
     }
 
     /// Convert game token coords to the index in the self.tokens vector.
