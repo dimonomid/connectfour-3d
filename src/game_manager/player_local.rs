@@ -67,7 +67,7 @@ impl PlayerLocal {
                 .await?;
         }
 
-        println!("player {:?}: letting GM know that we're ready", self.side);
+        //println!("player {:?}: letting GM know that we're ready", self.side);
         self.to_gm
             .send(PlayerToGameManager::StateChanged(PlayerState::Ready))
             .await?;
@@ -75,7 +75,7 @@ impl PlayerLocal {
         loop {
             tokio::select! {
                 Some(val) = self.from_gm.recv() => {
-                    println!("player {:?}: received from GM: {:?}", self.side, val);
+                    //println!("player {:?}: received from GM: {:?}", self.side, val);
 
                     match val {
                         GameManagerToPlayer::Reset(_board, new_side) => {

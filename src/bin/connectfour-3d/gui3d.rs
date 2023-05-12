@@ -345,7 +345,7 @@ impl Window3D {
                 Err(_) => return,
             };
 
-            println!("hey received from GM: {:?}", &msg);
+            //println!("hey received from GM: {:?}", &msg);
 
             match msg {
                 GameManagerToUI::SetToken(side, tcoords) => {
@@ -409,7 +409,7 @@ impl Window3D {
                 Err(_) => return,
             };
 
-            println!("hey received from a player {:?}", &msg);
+            //println!("hey received from a player {:?}", &msg);
 
             match msg {
                 PlayerLocalToUI::RequestInput(side, coord_sender) => {

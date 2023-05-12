@@ -76,7 +76,6 @@ impl PlayerWSClient {
         self.upd_state_not_ready("connecting to server...").await?;
 
         let (ws_stream, _) = connect_async(&self.connect_url).await?;
-        println!("WebSocket handshake has been successfully completed");
 
         self.upd_state_not_ready("authenticating...").await?;
 
@@ -116,7 +115,7 @@ impl PlayerWSClient {
                         Err(err) => { return Err(anyhow!("failed to parse {:?}: {}", recv, err)); }
                     };
 
-                    println!("received: {:?}", msg);
+                    //println!("received: {:?}", msg);
 
                     match msg {
                         WSServerToClient::Ping => {},
@@ -152,7 +151,7 @@ impl PlayerWSClient {
                 },
 
                 Some(val) = self.from_gm.recv() => {
-                    println!("ws player {:?}: received from GM: {:?}", self.side, val);
+                    //println!("ws player {:?}: received from GM: {:?}", self.side, val);
 
                     match val {
                         GameManagerToPlayer::Reset(_board, new_side) => {
