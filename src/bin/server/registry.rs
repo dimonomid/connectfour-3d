@@ -131,12 +131,7 @@ impl Registry {
                 // If both are there, error out; otherwise, add the new player and return the game.
                 if let Some(_) = gd.player_sec {
                     println!("game {} already has both players", game_id);
-                    return Some(Err(anyhow!(
-                        "game {} already has both players: {} and {}",
-                        game_id,
-                        gd.player_pri.as_ref().unwrap().id,
-                        gd.player_sec.as_ref().unwrap().id
-                    )));
+                    return Some(Err(anyhow!("game {} already has both players", game_id)));
                 }
 
                 // The game only had a single player, so adding this one as the secondary.

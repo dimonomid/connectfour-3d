@@ -91,7 +91,7 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
         Ok(v) => v,
         Err(err) => {
             let j =
-                serde_json::to_string(&WSServerToClient::Msg(format!("no game for you: {}", err)))?;
+                serde_json::to_string(&WSServerToClient::Msg(err.to_string()))?;
             let _ = write.send(tungstenite::Message::Text(j)).await;
             return Err(err);
         }

@@ -29,6 +29,8 @@ pub struct PlayerWSClient {
 
     from_gm: mpsc::Receiver<GameManagerToPlayer>,
     to_gm: mpsc::Sender<PlayerToGameManager>,
+
+    server_msg: Option<String>,
 }
 
 impl PlayerWSClient {
@@ -44,6 +46,7 @@ impl PlayerWSClient {
             side: None,
             from_gm,
             to_gm,
+            server_msg: None,
         }
     }
 
@@ -108,7 +111,8 @@ impl PlayerWSClient {
                         WSServerToClient::Ping => {},
                         WSServerToClient::Msg(s) => {
                             println!("got message from server: {}", s);
-                            self.upd_state_not_ready(&format!("msg from server: {}", s)).await?;
+                            self.upd_state_not_ready(&s).await?;
+                            self.server_msg = Some(s);
                         }
                         WSServerToClient::GameReset(v) => {
                             self.upd_state_ready().await?;
@@ -148,7 +152,15 @@ impl PlayerWSClient {
         }
     }
 
-    pub async fn upd_state_not_ready(&mut self, state: &str) -> Result<()> {
+    pub async fn upd_state_not_ready(&mut self, mut state: &str) -> Result<()> {
+        let mut tmp;
+        if let Some(server_msg) = &self.server_msg {
+            tmp = server_msg.clone();
+            tmp.push_str(": ");
+            tmp.push_str(state);
+            state = &tmp;
+        }
+
         self.to_gm
             .send(PlayerToGameManager::StateChanged(PlayerState::NotReady(
                 state.to_string(),
@@ -159,6 +171,7 @@ impl PlayerWSClient {
     }
 
     pub async fn upd_state_ready(&mut self) -> Result<()> {
+        self.server_msg = None;
         self.to_gm
             .send(PlayerToGameManager::StateChanged(PlayerState::Ready))
             .await?;
