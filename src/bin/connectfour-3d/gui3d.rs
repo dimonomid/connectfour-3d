@@ -193,10 +193,7 @@ impl Window3D {
                 // Flash last token, if needed
                 if self.last_token_num_flash > 0 {
                     if let Some(last_token) = self.last_token {
-                        self.tokens[Self::token_coords_to_idx(last_token)]
-                            .as_mut()
-                            .unwrap()
-                            .set_visible(self.flash_show);
+                        self.set_token_visible(last_token, self.flash_show);
 
                         if self.flash_show {
                             self.last_token_num_flash -= 1;
@@ -207,10 +204,7 @@ impl Window3D {
                 // Flash win row, if any
                 if let Some(win_row) = &self.win_row {
                     for tcoords in win_row.row {
-                        self.tokens[Self::token_coords_to_idx(tcoords)]
-                            .as_mut()
-                            .unwrap()
-                            .set_visible(self.flash_show);
+                        self.set_token_visible(tcoords, self.flash_show);
                     }
                 }
             }
@@ -237,6 +231,14 @@ impl Window3D {
                 pole.set_color(1.0, 1.0, 0.0);
             }
         }
+    }
+
+    /// Set the token with the given coords visible or not.
+    fn set_token_visible(&mut self, tcoords: TokenCoords, visible: bool) {
+        self.tokens[Self::token_coords_to_idx(tcoords)]
+            .as_mut()
+            .unwrap()
+            .set_visible(visible);
     }
 
     fn handle_user_input(&mut self, event: &Event) {
@@ -652,6 +654,14 @@ impl Window3D {
     /// Remember which token was set last. Needed because we need to flash it a
     /// little bit.
     fn set_last_token(&mut self, tcoords: TokenCoords) {
+        // Before we change the last token, make sure the previous one is
+        // visible, otherwise it'll stay invisible forever.
+        if let Some(last_token) = self.last_token {
+            if !self.flash_show {
+                self.set_token_visible(last_token, true);
+            }
+        }
+
         self.last_token = Some(tcoords);
         self.last_token_num_flash = LAST_TOKEN_NUM_FLASHES;
         self.last_flash_time = Instant::now();
