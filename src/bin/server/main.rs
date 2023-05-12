@@ -119,6 +119,11 @@ async fn handle_player(
                 match msg {
                     WSClientToServer::Hello(_) => { return Err(anyhow!("did not expect hello")); }
                     WSClientToServer::PutToken(coords) => {
+                        let mut gd = game_ctx.data.lock().await;
+                        gd.game.put_token(side.opposite(), coords.x, coords.z);
+                        gd.game_state = GameState::WaitingFor(side);
+                        drop(gd);
+
                         let to_opponent = match maybe_to_opponent.clone() {
                             Some(sender) => sender,
                             None => {
@@ -165,11 +170,6 @@ async fn handle_player(
 
                     PlayerToPlayer::PutToken(coords) => {
                         println!("received PutToken({:?})", coords);
-
-                        let mut gd = game_ctx.data.lock().await;
-                        gd.game.put_token(side, coords.x, coords.z);
-                        gd.game_state = GameState::WaitingFor(side.opposite());
-                        drop(gd);
 
                         let put_token = WSServerToClient::PutToken(coords);
                         let j = serde_json::to_string(&put_token)?;
