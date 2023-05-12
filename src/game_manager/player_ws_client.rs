@@ -1,40 +1,41 @@
 use anyhow::{anyhow, Result};
-
 use futures_util::{SinkExt, StreamExt};
-
-use super::{FullGameState, GameManagerToPlayer, GameState, PlayerState, PlayerToGameManager};
-use crate::game;
-use crate::{WSClientInfo, WSClientToServer, WSFullGameState, WSServerToClient};
-
 use tokio::sync::mpsc;
 use tokio::time;
 use tokio::time::Duration;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite;
 
-#[derive(Debug)]
-pub enum PlayerLocalToUI {
-    // Lets UI know that we're waiting for the input, and when it's done,
-    // the resulting coords should be sent via the provided sender.
-    RequestInput(game::Side, mpsc::Sender<game::PoleCoords>),
-}
+use super::{FullGameState, GameManagerToPlayer, GameState, PlayerState, PlayerToGameManager};
+use crate::game;
+use crate::{WSClientInfo, WSClientToServer, WSFullGameState, WSServerToClient};
 
+/// WebSocket client player, which will get actual moves from the remote player
+/// via the server.
 pub struct PlayerWSClient {
     connect_url: url::Url,
     game_id: String,
 
+    /// Current player side, if any.
     side: Option<game::Side>,
 
+    /// Channels for communicating with the GameManager.
     from_gm: mpsc::Receiver<GameManagerToPlayer>,
     to_gm: mpsc::Sender<PlayerToGameManager>,
 
-    /// Message that we received from the server; all the PlayerState::NonReady states that this
-    /// player generates will be prepended with that message, until the status finally becomes
+    /// Last error message that we received from the server; all the
+    /// PlayerState::NonReady states that this player generates will be
+    /// prepended with that message, until the status finally becomes
     /// PlayerState::Ready.
     server_msg: Option<String>,
 }
 
 impl PlayerWSClient {
+    /// Create a new WS client player.
+    ///
+    /// Game ID is how the server matches up the players against each other;
+    /// obviously exactly two players with the same game id are required for the
+    /// game to take place.
     pub fn new(
         connect_url: url::Url,
         game_id: String,
@@ -51,6 +52,8 @@ impl PlayerWSClient {
         }
     }
 
+    /// Event loop, runs forever, should be swapned by the client code as a
+    /// separate task.
     pub async fn run(&mut self) -> Result<()> {
         loop {
             match self.handle_ws_conn().await {
@@ -67,6 +70,8 @@ impl PlayerWSClient {
         }
     }
 
+    /// Tries to connect, and maintains this connection until it dies. Never
+    /// returns Ok.
     pub async fn handle_ws_conn(&mut self) -> Result<()> {
         self.upd_state_not_ready("connecting to server...").await?;
 
@@ -77,13 +82,17 @@ impl PlayerWSClient {
 
         let (mut to_ws, mut from_ws) = ws_stream.split();
 
+        // Now that we connected, authenticate with the server.
         let hello = WSClientToServer::Hello(WSClientInfo {
             game_id: self.game_id.clone(),
-            player_name: "me".to_string(), // TODO: OS username (but it's actually not used by the server yet).
 
-            // TODO: send actual current board state, instead of generating a brand new one. This
-            // way, the game can resume if server was rebooted while both clients kept running and
-            // eventually reconnected.
+            // TODO: OS username (but it's actually not used by the server yet).
+            player_name: "me".to_string(),
+
+            // TODO: send actual current board state, instead of generating a
+            // brand new one. This way, the game can resume if server was
+            // rebooted while both clients kept running and eventually
+            // reconnected.
             game_state: WSFullGameState {
                 game_state: GameState::WaitingFor(game::Side::White),
                 ws_player_side: game::Side::White,
@@ -117,7 +126,11 @@ impl PlayerWSClient {
                             self.server_msg = Some(s);
                         }
                         WSServerToClient::GameReset(v) => {
+                            // Server reset the game, it means we're just meeting with the other
+                            // player, and so we need to let GameManager know two things: that
+                            // we're ready to play, and also send the full game state to it.
                             self.upd_state_ready().await?;
+
                             self.to_gm
                                 .send(PlayerToGameManager::SetFullGameState(FullGameState{
                                     game_state: v.game_state.game_state,
@@ -127,9 +140,12 @@ impl PlayerWSClient {
                                 .await?;
                         }
                         WSServerToClient::PutToken(pcoords) => {
+                            // The remote player put token, so here we're communicating it to
+                            // our local GameManager on their behalf.
                             self.to_gm.send(PlayerToGameManager::PutToken(pcoords)).await?;
                         }
                         WSServerToClient::OpponentIsGone => {
+                            // Opponent is gone, so update our status.
                             self.upd_state_not_ready("opponent disconnected, waiting...").await?;
                         }
                     }
@@ -140,21 +156,30 @@ impl PlayerWSClient {
 
                     match val {
                         GameManagerToPlayer::Reset(_board, new_side) => {
+                            // Game manager lets us know our side. Actually that info originally
+                            // came from the server, so we already could have remembered it when we
+                            // received WSServerToClient::GameReset, but the protocol is that
+                            // GameManager assigns it to the players, so we just play ball.
                             self.side = Some(new_side);
                         },
                         GameManagerToPlayer::OpponentPutToken(pcoords) => {
+                            // Our local opponent put token, so send that info to the server.
                             let msg = WSClientToServer::PutToken(pcoords);
                             let j = serde_json::to_string(&msg)?;
                             to_ws.send(tungstenite::Message::Text(j)).await?;
                         },
-                        GameManagerToPlayer::GameState(_) => {},
+                        GameManagerToPlayer::GameStateChanged(_) => {},
                     }
                 }
             }
         }
     }
 
-    pub async fn upd_state_not_ready(&mut self, mut state: &str) -> Result<()> {
+    /// Communicate the NotReady state to the GameManager. Other than just
+    /// passing the given state string, it also prepends the state with whatever
+    /// error message we last received from the server (WSServerToClient::Msg),
+    /// if any.
+    async fn upd_state_not_ready(&mut self, mut state: &str) -> Result<()> {
         // If we have server_msg stored, then prepend the state with that server_msg.
         let mut tmp;
         if let Some(server_msg) = &self.server_msg {
@@ -173,6 +198,7 @@ impl PlayerWSClient {
         Ok(())
     }
 
+    /// Communicate the Ready state to the GameManager.
     pub async fn upd_state_ready(&mut self) -> Result<()> {
         self.server_msg = None;
         self.to_gm

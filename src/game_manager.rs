@@ -1,28 +1,45 @@
 pub mod player_local;
 pub mod player_ws_client;
 
-use super::game;
 use anyhow::{anyhow, Context, Result};
-
 use tokio::sync::mpsc;
 
+use super::game;
+
+/// Game manager which orchestrates the game between the UI and two players. It
+/// communicates with the players and UI via the channels, see
+/// GameManagerToPlayer, PlayerToGameManager, GameManagerToUI.
 pub struct GameManager {
+    /// Current game and its state.
     game: game::Game,
     game_state: Option<GameState>,
 
+    /// Sender to the UI.
     to_ui: mpsc::Sender<GameManagerToUI>,
+    /// Contexts of both players.
     players: [PlayerCtx; 2],
 }
 
+/// Context of a single player.
 struct PlayerCtx {
+    /// Player's current side.
     side: Option<game::Side>,
+    /// Player's current state.
     state: PlayerState,
 
+    /// Sender to and receiver from the player.
     to: mpsc::Sender<GameManagerToPlayer>,
     from: mpsc::Receiver<PlayerToGameManager>,
 }
 
 impl GameManager {
+    /// Creates a new GameManager, which will communicate with the UI and
+    /// players using the given channels.
+    ///
+    /// The first player (p0) is considered *primary*, and GameManager will
+    /// listen to it when it says to reset the whole game. As such, in a network
+    /// game, the network player has to be primary (p0), and local will be
+    /// secondary (p1). See more details in PlayerToGameManager::SetFullGameState.
     pub fn new(
         to_ui: mpsc::Sender<GameManagerToUI>,
 
@@ -55,6 +72,8 @@ impl GameManager {
         }
     }
 
+    /// Event loop, runs forever, should be swapned by the client code as a
+    /// separate task.
     pub async fn run(&mut self) -> Result<()> {
         loop {
             let (p0_mut, p1_mut) = self.both_players_mut();
@@ -71,18 +90,19 @@ impl GameManager {
         }
     }
 
-    pub async fn upd_player_turns(&mut self) -> Result<()> {
+    /// Propagate current game state to both players and the UI.
+    async fn propagate_game_state_change(&mut self) -> Result<()> {
         let gs = self.game_state.unwrap();
 
         self.players[0]
             .to
-            .send(GameManagerToPlayer::GameState(gs))
+            .send(GameManagerToPlayer::GameStateChanged(gs))
             .await
             .context(format!("player 0"))?;
 
         self.players[1]
             .to
-            .send(GameManagerToPlayer::GameState(gs))
+            .send(GameManagerToPlayer::GameStateChanged(gs))
             .await
             .context(format!("player 1"))?;
 
@@ -107,6 +127,9 @@ impl GameManager {
         Ok(())
     }
 
+    /// Handles full game reset; it happens when e.g. a network player connected
+    /// to the server and the server has dumped the current game state to it.
+    /// Here we should update internal state, the other player, and the UI.
     async fn handle_full_game_state(&mut self, i: usize, fgstate: FullGameState) -> Result<()> {
         if i != 0 {
             println!(
@@ -156,14 +179,11 @@ impl GameManager {
             .await
             .context("updating UI")?;
 
-        println!(
-            "game state is known, gonna let players know: {}: {:?}, {}: {:?}",
-            i, fgstate.primary_player_side, opponent_idx, opposite_side
-        );
-
+        // Update game state and propagate it to everyone.
         self.game_state = Some(fgstate.game_state);
-
-        self.upd_player_turns().await.context("initial update")?;
+        self.propagate_game_state_change()
+            .await
+            .context("initial update")?;
 
         Ok(())
     }
@@ -214,55 +234,69 @@ impl GameManager {
         }
     }
 
+    /// Called when a player puts a token.
     pub async fn handle_player_put_token(
         &mut self,
         i: usize,
         pcoords: game::PoleCoords,
     ) -> Result<()> {
-        let side = self.players[i].side;
+        let maybe_side = self.players[i].side;
+        println!("GM: player {:?} put token {:?}", maybe_side, pcoords);
 
-        println!("GM: player {:?} put token {:?}", side, pcoords);
+        // Some sanity checks that the game state and the player side are all as
+        // expected. If something is off, for now we'll just print to stdout,
+        // update everyone about the current game state, and return Ok. We can't
+        // return an error here because it'll be interpreted as communication
+        // failure and the whole task will exit. It might be tempting to
+        // actually do this, or even to panic, since it "shouldn't happen", but
+        // since it can actually happen in a network game with a potentially
+        // broken server or the remote player, we take it mildly.  TODO: perhaps
+        // improve this error handling at some point.
 
-        let next_move_side = match self.game_state.unwrap() {
-            GameState::WaitingFor(side) => side,
+        let expected_move_side = match self.game_state.unwrap() {
+            GameState::WaitingFor(s) => s,
             GameState::WonBy(_) => {
                 println!("game is won, but player put token");
-                self.upd_player_turns().await?;
+                self.propagate_game_state_change().await?;
                 return Ok(());
             }
         };
 
-        let player_side = match side {
+        let side = match maybe_side {
             None => {
                 println!("no current player side, but player put token");
-                self.upd_player_turns().await?;
+                self.propagate_game_state_change().await?;
                 return Ok(());
             }
-            Some(side) => side,
+            Some(s) => s,
         };
 
-        if player_side != next_move_side {
+        if side != expected_move_side {
             println!(
                 "wrong side: {:?}, waiting for {:?}",
-                player_side, next_move_side
+                side, expected_move_side
             );
-            self.upd_player_turns().await?;
+            self.propagate_game_state_change().await?;
             return Ok(());
         }
 
-        let res = match self.game.put_token(player_side, pcoords) {
+        // The side matches, try to actually put the token. This can still fail
+        // if the pole is full. Again, we don't give any actual feedback to the
+        // player that the pole is full; we simply refuse to put the token and
+        // gonna request a move from it again. That's a reasonable UX imo.
+        let res = match self.game.put_token(side, pcoords) {
             Ok(res) => res,
             Err(err) => {
                 println!("can't put: {}", err);
-                self.upd_player_turns().await?;
+                self.propagate_game_state_change().await?;
                 return Ok(());
             }
         };
 
-        // Add new token to the UI.
+        // All good, add new token to the UI.
         self.to_ui
             .send(GameManagerToUI::SetToken(
-                player_side,
+                side,
                 game::TokenCoords {
                     x: pcoords.x,
                     y: res.y,
@@ -272,42 +306,54 @@ impl GameManager {
             .await
             .context("updating UI")?;
 
-        let opposite_side = next_move_side.opposite();
-
+        // Let the other player know.
+        let opposite_side = side.opposite();
         self.player_by_side(opposite_side)
             .unwrap()
             .to
             .send(GameManagerToPlayer::OpponentPutToken(pcoords))
             .await?;
 
+        // Update game state, depending on whether the new token won the game.
         if res.won {
-            self.game_state = Some(GameState::WonBy(next_move_side));
+            self.game_state = Some(GameState::WonBy(side));
 
+            // Also let the UI know the full winning row.
             self.to_ui
-                .send(GameManagerToUI::WinRow(self.game.get_win_row().clone().unwrap()))
+                .send(GameManagerToUI::WinRow(
+                    self.game.get_win_row().clone().unwrap(),
+                ))
                 .await
                 .context("updating UI")?;
         } else {
             self.game_state = Some(GameState::WaitingFor(opposite_side));
         }
-        self.upd_player_turns().await?;
+
+        // Let everyone know about the current game state.
+        self.propagate_game_state_change().await?;
 
         Ok(())
     }
 }
 
+/// Simple state of the game: either waiting for someone's turn, or someone has
+/// won already.
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
 pub enum GameState {
     WaitingFor(game::Side),
     WonBy(game::Side),
 }
 
+/// Full state of the game, containing the board state, and side of the players.
+/// See PlayerToGameManager::SetFullGameState, where it is used.
 #[derive(Debug)]
 pub struct FullGameState {
+    /// Either waiting for someone's turn, or someone has won already.
     pub game_state: GameState,
 
-    /// Side of the primary player (the one who sends PlayerToGameManager::SetFullGameState with
-    /// this full state).
+    /// Side of the primary player (the one who sends
+    /// PlayerToGameManager::SetFullGameState with this full state). The other
+    /// player obviously has the opposite side.
     pub primary_player_side: game::Side,
 
     /// Full board state.
@@ -317,36 +363,59 @@ pub struct FullGameState {
 /// Player state from the point of view of the GameManager.
 #[derive(Debug, Clone)]
 pub enum PlayerState {
-    /// Not-yet-ready, with a human-readable string message explaining the status.
+    /// Not-yet-ready, with a human-readable string message explaining the
+    /// status. Only used by PlayerWSClient.
     NotReady(String),
+    /// Ready to play. Local players are always ready.
     Ready,
 }
 
 /// Message that GameManager can send to a player.
 #[derive(Debug)]
 pub enum GameManagerToPlayer {
+    /// Reset the game: the board state, and the side of the receiving player.
     Reset(game::BoardState, game::Side),
+    /// Opponent has put token on the given pole.
     OpponentPutToken(game::PoleCoords),
-    GameState(GameState),
+    /// Game state has changed.
+    GameStateChanged(GameState),
 }
 
 /// Message that a player can send to GameManager.
 #[derive(Debug)]
 pub enum PlayerToGameManager {
-    /// Overwrite full game state. Only primary player can send SetFullGameState messages; if
-    /// secondary player does this, GameManager will just ignore it.
+    /// Overwrite full game state. Only primary player can send SetFullGameState
+    /// messages; if secondary player does this, GameManager will just ignore
+    /// it.
+    ///
+    /// It might feel weird that a _player_ can call GameManager and reset the
+    /// whole game, but with a network game, a "player" is just an interface to
+    /// the server, and the server ultimately has to decide what the game status
+    /// is. So when the server says that the game is reset, both players
+    /// connected to it will communicate that to their GameManager-s, which in
+    /// turn will update the other (local) player and the UI.
     SetFullGameState(FullGameState),
+    /// Player state has changed.
     StateChanged(PlayerState),
+    /// Player put a token on the given pole.
     PutToken(game::PoleCoords),
 }
 
 /// Message that a GameManager can send to UI.
 #[derive(Debug)]
 pub enum GameManagerToUI {
+    /// Set token of the given size and coords.
     SetToken(game::Side, game::TokenCoords),
+    /// The whole board is reset to this new state.
     ResetBoard(game::BoardState),
+    /// Player with the given index has changed its status.  The index can only
+    /// be 0 or 1. TODO: create an enum for those primary/secondary players.
     PlayerStateChanged(usize, PlayerState),
+    /// Players have changed their sides. The given sides correspond to player 0
+    /// and 1.
     PlayerSidesChanged(game::Side, game::Side),
+    /// Game state has changed.
     GameStateChanged(GameState),
+    /// There is a winner.
     WinRow(game::WinRow),
 }

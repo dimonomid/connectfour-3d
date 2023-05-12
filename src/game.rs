@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Result};
 
-/// In "Connect Four", ROW_SIZE is the "Four". It can be changed to any positive number, and the
-/// app will work. Might even make it as a parameter, but I didn't bother.
+/// In "Connect Four", ROW_SIZE is the "Four". It can be changed to any positive
+/// number, and the app will work. Might even make it as a parameter, but I
+/// didn't bother.
 pub const ROW_SIZE: usize = 4;
 
-/// Describes state of the board, a winner (if any), and has useful methods for putting tokens and
-/// checking for the winner.
+/// Describes state of the board, a winner (if any), and has useful methods for
+/// putting tokens and checking for the winner.
 pub struct Game {
     board: BoardState,
 
@@ -21,8 +22,9 @@ pub struct WinRow {
     pub row: [TokenCoords; ROW_SIZE],
 }
 
-/// State of the connect-four board, i.e. placement and sides of all tokens. There is no validation
-/// done, so technically one can construct an impossible state like hanging tokens.
+/// State of the connect-four board, i.e. placement and sides of all tokens.
+/// There is no validation done, so technically one can construct an impossible
+/// state like hanging tokens.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BoardState {
     tokens: Vec<Option<Side>>,
@@ -60,22 +62,33 @@ pub struct PoleCoords {
 }
 
 impl PoleCoords {
+    /// Create new pole coords X, Z.
     pub fn new(x: usize, z: usize) -> PoleCoords {
         PoleCoords { x, z }
     }
 
+    /// Get coords of a pole's token with the given Y.
     pub fn token_coords(&self, y: usize) -> TokenCoords {
-        TokenCoords { x: self.x, y, z: self.z }
+        TokenCoords {
+            x: self.x,
+            y,
+            z: self.z,
+        }
     }
 }
 
 impl TokenCoords {
+    /// Create new token coords X, Z.
     pub fn new(x: usize, y: usize, z: usize) -> TokenCoords {
         TokenCoords { x, y, z }
     }
 
+    /// Get coords of a token's pole.
     pub fn pole_coords(&self) -> PoleCoords {
-        PoleCoords { x: self.x, z: self.z }
+        PoleCoords {
+            x: self.x,
+            z: self.z,
+        }
     }
 }
 
@@ -88,10 +101,11 @@ impl Game {
         }
     }
 
-    /// Put a new token on the pole with the given coords X, Z. Note that Y is not passed here: it
-    /// will be returned in the result, if successful.
+    /// Put a new token on the pole with the given coords X, Z. Note that Y is
+    /// not passed here: it will be returned in the result, if successful.
     ///
-    /// An error is returned if the given pole is full, or if someone won the game already.
+    /// An error is returned if the given pole is full, or if someone won the
+    /// game already.
     pub fn put_token(&mut self, side: Side, pcoords: PoleCoords) -> Result<PutResult> {
         panic_if_out_of_bounds(pcoords.x, 0, pcoords.z);
 
@@ -141,14 +155,15 @@ impl Game {
         self.win_row = self.check_win();
     }
 
-    /// Returns current winning row, if any. Once that function returns Some row, no more tokens
-    /// can be put, until reset_board is called.
+    /// Returns current winning row, if any. Once that function returns Some
+    /// row, no more tokens can be put, until reset_board is called.
     pub fn get_win_row(&self) -> &Option<WinRow> {
         &self.win_row
     }
 
-    /// Checks all possible rows and returns the first one that is full of tokens of the same side.
-    /// It's called every time a new token is put, or a whole board is imported.
+    /// Checks all possible rows and returns the first one that is full of
+    /// tokens of the same side.  It's called every time a new token is put, or
+    /// a whole board is imported.
     fn check_win(&self) -> Option<WinRow> {
         // Vertical rows (constant x, z).
         for x in 0..ROW_SIZE {
@@ -302,8 +317,9 @@ impl Game {
         None
     }
 
-    /// A helper to check if a single row is full of tokens of the same size. The tcoord_getter
-    /// callback takes an index from 0 to ROW_SIZE-1, and returns full coords for that token.
+    /// A helper to check if a single row is full of tokens of the same size.
+    /// The tcoord_getter callback takes an index from 0 to ROW_SIZE-1, and
+    /// returns full coords for that token.
     fn check_win_row(&self, tcoord_getter: impl Fn(usize) -> TokenCoords) -> Option<WinRow> {
         let mut row_side: Option<Side> = None;
         let mut row = [TokenCoords { x: 0, y: 0, z: 0 }; ROW_SIZE];
@@ -349,16 +365,17 @@ impl BoardState {
         }
     }
 
-    /// Get a token with the given coords. If coords are outside of the board size, it panics.
+    /// Get a token with the given coords. If coords are outside of the board
+    /// size, it panics.
     pub fn get(&self, tcoords: TokenCoords) -> Option<Side> {
         panic_if_out_of_bounds(tcoords.x, tcoords.y, tcoords.z);
 
         *self.tokens.get(Self::coord_to_idx(tcoords)).unwrap()
     }
 
-    /// Set a token of the given side on the given coords. If coords are outside of the board size,
-    /// it panics. Other than that, no validation is done, so technically one can set e.g. a
-    /// hanging token.
+    /// Set a token of the given side on the given coords. If coords are outside
+    /// of the board size, it panics. Other than that, no validation is done, so
+    /// technically one can set e.g. a hanging token.
     pub fn set(&mut self, side: Side, tcoords: TokenCoords) {
         panic_if_out_of_bounds(tcoords.x, tcoords.y, tcoords.z);
 

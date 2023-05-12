@@ -1,28 +1,23 @@
 mod registry;
 
+use std::{env, io::Error, sync::Arc, time::Duration};
+
 use anyhow::{anyhow, Result};
-
-use std::sync::Arc;
-use std::{env, io::Error};
-use tokio_tungstenite::{tungstenite, tungstenite::protocol::Message, WebSocketStream};
-
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
+use registry::{GameCtx, PlayerToPlayer, Registry};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-
-use std::time::Duration;
 use tokio::time;
-
-use registry::{GameCtx, Registry};
+use tokio_tungstenite::{tungstenite, tungstenite::protocol::Message, WebSocketStream};
 
 use connectfour::game;
 use connectfour::game_manager::GameState;
-use connectfour::{GameReset, WSClientToServer, WSFullGameState, WSServerToClient};
-use registry::PlayerToPlayer;
+use connectfour::{WSClientToServer, WSFullGameState, WSGameReset, WSServerToClient};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    // By default, listen on 0.0.0.0:7248.
     let addr = env::args()
         .nth(1)
         .unwrap_or_else(|| "0.0.0.0:7248".to_string());
@@ -31,8 +26,10 @@ async fn main() -> Result<(), Error> {
     let listener = try_socket.expect("failed to bind");
     println!("Listening on: {}", addr);
 
+    // Create registry to keep all active game data in.
     let r = Arc::new(Registry::new());
 
+    // Listen forever, accepting incoming connections.
     while let Ok((stream, _)) = listener.accept().await {
         tokio::spawn(handle_conn(r.clone(), stream));
     }
@@ -40,6 +37,7 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
+/// Takes care of a single connection, until it is broken. Never returns Ok.
 async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
     let addr = stream
         .peer_addr()
@@ -58,7 +56,7 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
 
     let (mut write, mut read) = ws_stream.split();
 
-    // Wait for the hello message.
+    // Wait for the hello message first.
     let recv = read
         .next()
         .await
@@ -75,9 +73,11 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
         }
     };
 
-    let player_id = addr.to_string();
-
     let (to_player_tx, to_player_rx) = mpsc::channel::<PlayerToPlayer>(8);
+
+    // Use player remote address as an ID. Player IDs must only be unique for a
+    // particular game ID, but having them globally unique doesn't hurt.
+    let player_id = addr.to_string();
 
     let game_ctx = match r
         .join_or_create_game(
@@ -90,13 +90,14 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
     {
         Ok(v) => v,
         Err(err) => {
-            let j =
-                serde_json::to_string(&WSServerToClient::Msg(err.to_string()))?;
+            let j = serde_json::to_string(&WSServerToClient::Msg(err.to_string()))?;
             let _ = write.send(tungstenite::Message::Text(j)).await;
             return Err(err);
         }
     };
 
+    // Now that the player is authenticated and added to the game, defer all the
+    // rest of the work on behalf of this player to handle_player.
     let leave_msg =
         match handle_player(game_ctx.clone(), &player_id, to_player_rx, write, read).await {
             Ok(()) => {
@@ -105,11 +106,14 @@ async fn handle_conn(r: Arc<Registry>, stream: TcpStream) -> Result<()> {
             Err(err) => format!("err: {}", err),
         };
 
+    // The client has disconnected, remove it from the game (and potentially
+    // destroy the game).
     r.leave_game(&player_info.game_id, &player_id).await;
 
     Err(anyhow!("left game: {}", leave_msg))
 }
 
+/// Take care of a single player, until the connection is broken. Never returns Ok.
 async fn handle_player(
     game_ctx: Arc<GameCtx>,
     player_id: &str,
@@ -125,10 +129,10 @@ async fn handle_player(
 
     loop {
         tokio::select! {
+            // Handle messages from websocket, so from the remote client on
+            // behalf of which we're working here.
             Some(v) = from_ws.next() => {
                 let recv = v?;
-                println!("new msg: {:?}", recv);
-                //to_ws.send(tungstenite::Message::Text("my message ".to_string() + &recv.to_string())).await?
 
                 let msg: WSClientToServer = serde_json::from_str(&recv.to_string())?;
                 match msg {
@@ -140,20 +144,15 @@ async fn handle_player(
                         gd.game_state = GameState::WaitingFor(side);
                         drop(gd);
 
-                        let to_opponent = match maybe_to_opponent.clone() {
-                            Some(sender) => sender,
-                            None => {
-                                // TODO: stash the value
-                                println!("received coords while not having the opponent");
-                                continue;
-                            },
-                        };
-
-                        let _ = to_opponent.send(PlayerToPlayer::PutToken(tcoords)).await;
+                        if let Some(to_opponent) = &maybe_to_opponent {
+                            to_opponent.send(PlayerToPlayer::PutToken(tcoords)).await?;
+                        }
                     },
                 }
             }
 
+            // Handle messages from the opponent, so another player connected to
+            // the same server.
             Some(val) = from_opponent.recv() => {
                 println!("player {}: received from another player: {:?}", player_id, val);
 
@@ -163,7 +162,7 @@ async fn handle_player(
                         side = v.my_side;
 
                         let gd = game_ctx.data.lock().await;
-                        let game_reset = WSServerToClient::GameReset(GameReset{
+                        let game_reset = WSServerToClient::GameReset(WSGameReset{
                             opponent_name: "my opponent".to_string(), // TODO: actual name
                             game_state: WSFullGameState{
                                 game_state: gd.game_state,
@@ -185,8 +184,6 @@ async fn handle_player(
                     }
 
                     PlayerToPlayer::PutToken(tcoords) => {
-                        println!("received PutToken({:?})", tcoords);
-
                         let put_token = WSServerToClient::PutToken(tcoords);
                         let j = serde_json::to_string(&put_token)?;
                         to_ws.send(tungstenite::Message::Text(j)).await?;

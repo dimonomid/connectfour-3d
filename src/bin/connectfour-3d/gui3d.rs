@@ -1,3 +1,8 @@
+use std::cmp::Ordering;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+use std::vec::Vec;
+
 use kiss3d::camera::{ArcBall, Camera};
 use kiss3d::event::{Action, Event, MouseButton, WindowEvent};
 use kiss3d::light::Light;
@@ -5,19 +10,15 @@ use kiss3d::nalgebra::{Point2, Point3, Translation3, Vector2, Vector3};
 use kiss3d::scene::SceneNode;
 use kiss3d::text::Font;
 use kiss3d::window::Window;
-
+use ordered_float::OrderedFloat;
 use tokio::sync::mpsc;
 
-use std::cmp::Ordering;
-use std::rc::Rc;
-use std::time::{Duration, Instant};
-use std::vec::Vec;
-
 use super::OpponentKind;
-use connectfour::game::{PoleCoords, TokenCoords, Side, WinRow, ROW_SIZE};
+use connectfour::game::{PoleCoords, Side, TokenCoords, WinRow, ROW_SIZE};
 use connectfour::game_manager::player_local::PlayerLocalToUI;
 use connectfour::game_manager::{GameManagerToUI, GameState, PlayerState};
-use ordered_float::OrderedFloat;
+
+/// Constants which configure the 3D model.
 
 const POLE_WIDTH: f32 = 1.0;
 const TOKEN_D_TO_HEIGHT: f32 = 0.8;
@@ -31,9 +32,11 @@ const FOUNDATION_WIDTH: f32 = POLE_SPACING * (ROW_SIZE as f32 - 1.0) + MARGIN * 
 const FOUNDATION_HEIGHT: f32 = POLE_WIDTH;
 const POINTER_RADIUS: f32 = POLE_RADIUS * 0.7;
 
-// Y coord for a plane which matches tops of all poles.
+/// Y coord for a plane which matches tops of all poles.
 const POLES_TOP_Y: f32 = POLE_HEIGHT / 2.0;
 
+/// How often to flash tokens, whenever we need to flash some (we do for the
+/// winning row).
 const FLASH_DUR_MS: u128 = 200;
 const FLASH_DUR: Duration = Duration::from_millis(FLASH_DUR_MS as u64);
 
@@ -42,15 +45,26 @@ pub struct Window3D {
     font: Rc<Font>,
     camera: ArcBall,
 
+    /// A vector of currently added tokens as spheres.
     tokens: Vec<Option<SceneNode>>,
+    /// A tiny sphere which shows up on top of poles when mouse hovers them (only
+    /// whenever a local player has requested an input from UI, i.e. when
+    /// pending_input is not None).
     pole_pointer: SceneNode,
 
+    /// Whenever a PlayerLocal requests an input from UI (where to put a token),
+    /// pending_input becomes Some(v). When the user picks a pole, the PoleCoords
+    /// are sent via pending_input.coord_sender, and it becomes None again.
     pending_input: Option<PendingInput>,
 
-    last_pos: Point2<f32>,
+    /// Last mouse coords are updated whenever the user moves the mouse cursor.
+    last_mouse_coords: Point2<f32>,
 
+    /// Whether mouse button (any of them) is down atm.
     mouse_down: bool,
-    // Set to true if the scene is being rotated or moved with the mouse.
+    /// Set to true if the scene is being rotated or moved with the mouse. If
+    /// it's true, on the mouse release we will not interpret it as "put token
+    /// here".
     rotating: bool,
 
     from_gm: mpsc::Receiver<GameManagerToUI>,
@@ -60,6 +74,9 @@ pub struct Window3D {
     opponent_kind: OpponentKind,
 
     game_state: Option<GameState>,
+
+    /// If not None, it means there is a winner, and it's the winning row. We'll
+    /// flash the tokens there.
     win_row: Option<WinRow>,
 }
 
@@ -77,8 +94,8 @@ impl Window3D {
         let at = Point3::origin();
         let camera = ArcBall::new(eye, at);
 
-        // Create pole pointer, initially invisible. It'll be visible only when the mouse cursor
-        // hovers a pole.
+        // Create pole pointer, initially invisible. It'll be visible only when
+        // the mouse cursor hovers a pole.
         let mut pole_pointer = w.add_sphere(POINTER_RADIUS);
         pole_pointer.set_visible(false);
 
@@ -107,7 +124,7 @@ impl Window3D {
             rotating: false,
             from_gm,
             from_players,
-            last_pos: Point2::new(0.0f32, 0.0f32),
+            last_mouse_coords: Point2::new(0.0f32, 0.0f32),
             players: [
                 PlayerInfo {
                     name: p0_name.to_string(),
@@ -125,12 +142,51 @@ impl Window3D {
             win_row: None,
         };
 
-        window.create_frame();
+        window.create_3d_board();
 
         window
     }
 
-    fn create_frame(&mut self) {
+    /// Event loop, runs until the user closes the GUI window. Client code
+    /// should run it in a separate OS thread. It might be possible to stick it
+    /// to be an async task, but I didn't find a way to figure when it is worth
+    /// to re-render. So for now, we do what all examples in kiss3d are doing:
+    /// just keeps rendering all the time.
+    pub fn run(&mut self) {
+        let mut last_flash_time = Instant::now();
+        let mut flash_show = true;
+
+        while self.render() {
+            // Handle keyboard and mouse events (apart from rotating the model,
+            // zooming etc - this one is taken care of automatically).
+            for event in self.w.events().iter() {
+                self.handle_user_input(&event)
+            }
+
+            self.handle_gm_messages();
+            self.handle_player_messages();
+
+            // If some tokens need to be flashed, flash them every FLASH_DUR_MS ms.
+            let now = Instant::now();
+            let dur = now.saturating_duration_since(last_flash_time).as_millis();
+            if dur >= FLASH_DUR_MS {
+                last_flash_time = last_flash_time.checked_add(FLASH_DUR).unwrap();
+                flash_show = !flash_show;
+
+                if let Some(win_row) = &self.win_row {
+                    for tcoords in win_row.row {
+                        self.tokens[Self::token_coords_to_idx(tcoords)]
+                            .as_mut()
+                            .unwrap()
+                            .set_visible(flash_show);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Create a 3D model of an empty game board.
+    fn create_3d_board(&mut self) {
         let mut foundation = self
             .w
             .add_cube(FOUNDATION_WIDTH, FOUNDATION_HEIGHT, FOUNDATION_WIDTH);
@@ -151,7 +207,7 @@ impl Window3D {
         }
     }
 
-    fn handle_event(&mut self, event: &Event) {
+    fn handle_user_input(&mut self, event: &Event) {
         match event.value {
             WindowEvent::MouseButton(_btn, Action::Press, _modif) => {
                 self.mouse_down = true;
@@ -175,7 +231,7 @@ impl Window3D {
 
                 // Going to try to add a token.
 
-                let pcoords = match self.mouse_coords_to_pole_coords(self.last_pos) {
+                let pcoords = match self.mouse_coords_to_pole_coords(self.last_mouse_coords) {
                     Some(pcoords) => pcoords,
                     None => return,
                 };
@@ -185,7 +241,8 @@ impl Window3D {
                     .as_ref()
                     .expect("no pending_input")
                     .coord_sender
-                    .try_send(pcoords) {
+                    .try_send(pcoords)
+                {
                     Ok(_) => {
                         self.pending_input = None;
                     }
@@ -197,7 +254,7 @@ impl Window3D {
                 self.update_pole_pointer();
             }
             WindowEvent::CursorPos(x, y, _modif) => {
-                self.last_pos = Point2::new(x as f32, y as f32);
+                self.last_mouse_coords = Point2::new(x as f32, y as f32);
                 if self.mouse_down {
                     self.rotating = true;
                 }
@@ -208,58 +265,36 @@ impl Window3D {
         }
     }
 
+    /// Depending on the current mouse coords and internal state, either hide
+    /// the pole pointer, or hide it. We show it when all of those are true:
+    ///
+    /// - PlayerLocal requested an input from the UI
+    /// - The mouse hovers some pole top
+    /// - We aren't in the process of rotating or moving 3D view
     fn update_pole_pointer(&mut self) {
         if self.rotating || !self.waiting_for_input() {
             self.pole_pointer.set_visible(false);
             return;
         }
 
-        let pcoords = match self.mouse_coords_to_pole_coords(self.last_pos) {
+        let pcoords = match self.mouse_coords_to_pole_coords(self.last_mouse_coords) {
             Some(pcoords) => pcoords,
             None => {
                 self.pole_pointer.set_visible(false);
                 return;
             }
         };
+
+        // We need to show the pointer, so figure the exact coords, and show it.
+
         let mut pole_top_t = Self::pole_translation(pcoords);
         pole_top_t.y += POLE_HEIGHT / 2.0;
 
-        //let v = self.mouse_coords_to_pole_translation(self.last_pos);
         self.pole_pointer.set_local_translation(pole_top_t);
         self.pole_pointer.set_visible(true);
     }
 
-    pub fn run(&mut self) {
-        let mut last_flash_time = Instant::now();
-        let mut flash_show = true;
-
-        while self.render() {
-            for event in self.w.events().iter() {
-                self.handle_event(&event)
-            }
-
-            self.handle_gm_messages();
-            self.handle_player_messages();
-
-            // Flash tokens every FLASH_DUR_MS ms.
-            let now = Instant::now();
-            let dur = now.saturating_duration_since(last_flash_time).as_millis();
-            if dur >= FLASH_DUR_MS {
-                last_flash_time = last_flash_time.checked_add(FLASH_DUR).unwrap();
-                flash_show = !flash_show;
-
-                if let Some(win_row) = &self.win_row {
-                    for tcoords in win_row.row {
-                        self.tokens[Self::token_coords_to_idx(tcoords)]
-                            .as_mut()
-                            .unwrap()
-                            .set_visible(flash_show);
-                    }
-                }
-            }
-        }
-    }
-
+    /// Handle all pending messages from GameManager.
     fn handle_gm_messages(&mut self) {
         loop {
             let msg = match self.from_gm.try_recv() {
@@ -321,6 +356,7 @@ impl Window3D {
         }
     }
 
+    /// Handle all pending messages from both players.
     fn handle_player_messages(&mut self) {
         loop {
             let msg = match self.from_players.try_recv() {
@@ -350,6 +386,7 @@ impl Window3D {
         }
     }
 
+    /// Call the 3D rendering routine, and put all the overlay texts.
     fn render(&mut self) -> bool {
         if !self.w.render_with_camera(&mut self.camera) {
             return false;
@@ -403,13 +440,8 @@ impl Window3D {
                             color = Point3::new(0.5, 0.5, 0.5);
                         }
 
-                        self.w.draw_text(
-                            text,
-                            &Point2::new(10.0, 100.0),
-                            60.0,
-                            &self.font,
-                            &color,
-                        );
+                        self.w
+                            .draw_text(text, &Point2::new(10.0, 100.0), 60.0, &self.font, &color);
                     }
                 }
             }
@@ -450,6 +482,8 @@ impl Window3D {
         true
     }
 
+    /// Return whether we are currently waiting for the user's input where to
+    /// put the token.
     fn waiting_for_input(&self) -> bool {
         if let Some(_) = self.pending_input {
             return true;
@@ -458,6 +492,7 @@ impl Window3D {
         false
     }
 
+    /// Return 3D coords (translation) of the given pole.
     fn pole_translation(pcoords: PoleCoords) -> Translation3<f32> {
         let xcoord = MARGIN + pcoords.x as f32 * POLE_SPACING - FOUNDATION_WIDTH / 2.0;
         let zcoord = MARGIN + pcoords.z as f32 * POLE_SPACING - FOUNDATION_WIDTH / 2.0;
@@ -465,6 +500,7 @@ impl Window3D {
         Translation3::new(xcoord, 0.0, zcoord)
     }
 
+    /// Return 3D coords (translation) of the given token.
     fn token_translation(tcoords: TokenCoords) -> Translation3<f32> {
         let mut t = Self::pole_translation(tcoords.pole_coords());
         t.y = -POLE_HEIGHT / 2.0 + TOKEN_HEIGHT / 2.0 + TOKEN_HEIGHT * (tcoords.y as f32);
@@ -472,10 +508,10 @@ impl Window3D {
         t
     }
 
-    // returns approximate point where the given ray intersects with the plane which
-    // matches the top of the poles.
-    //
-    // TODO: it's written in extremely dumb way, figure the proper way to do it.
+    /// returns approximate point where the given ray intersects with the plane
+    /// which matches the top of the poles.
+    ///
+    /// TODO: it's written in extremely dumb way, figure the proper way to do it.
     fn top_plane_intersect(p: &Point3<f32>, v: &Vector3<f32>) -> Option<Point3<f32>> {
         // If the ray doesn't intersect with the plane, cut it short.
         let ord_p = Self::cmpf32(POLES_TOP_Y, p.y);
@@ -502,11 +538,14 @@ impl Window3D {
         Some(pcur)
     }
 
-    // Just a shortcut to compare two f32-s.
+    /// Just a shortcut to compare two f32-s.
     fn cmpf32(n: f32, m: f32) -> Ordering {
         return OrderedFloat(n).cmp(&OrderedFloat(m));
     }
 
+    /// Try to convert mouse pointer coords into approximate 3D coords of a
+    /// plane on which all pole top are. If mouse doesn't seem to be pointing to
+    /// this plane, returns None.
     fn mouse_coords_to_pole_translation(&self, mouse_pt: Point2<f32>) -> Option<Point3<f32>> {
         let window_size = Vector2::new(self.w.size()[0] as f32, self.w.size()[1] as f32);
         let ray = self.camera.unproject(&mouse_pt, &window_size);
@@ -514,6 +553,9 @@ impl Window3D {
         Self::top_plane_intersect(&ray.0, &ray.1)
     }
 
+    /// Try to convert pole top 3D coords (translation) to the game PoleCoords.
+    /// If the given coords don't seem to be pointing to a particular plane,
+    /// returns None.
     fn pole_translation_to_pole_coords(t: Point3<f32>) -> Option<PoleCoords> {
         const TOLERANCE: f32 = POLE_RADIUS * 1.5;
 
@@ -533,11 +575,15 @@ impl Window3D {
         None
     }
 
+    /// Try to convert mouse pointer coords into game coords of a pole
+    /// (PoleCoords). If mouse doesn't seem to be pointing to a particular pole
+    /// top, returns None.
     fn mouse_coords_to_pole_coords(&self, mouse_pt: Point2<f32>) -> Option<PoleCoords> {
         let v = self.mouse_coords_to_pole_translation(mouse_pt)?;
         Self::pole_translation_to_pole_coords(v)
     }
 
+    /// Add a new token with the given side and coords.
     fn add_token(&mut self, side: Side, tcoords: TokenCoords) {
         let mut s = self.w.add_sphere(TOKEN_RADIUS);
         let c = Self::color_by_side(side);
@@ -547,10 +593,12 @@ impl Window3D {
         self.tokens[Self::token_coords_to_idx(tcoords)] = Some(s);
     }
 
+    /// Convert game token coords to the index in the self.tokens vector.
     fn token_coords_to_idx(tcoords: TokenCoords) -> usize {
         tcoords.x + tcoords.y * ROW_SIZE + tcoords.z * ROW_SIZE * ROW_SIZE
     }
 
+    /// Return RGB floats for the given game side.
     fn color_by_side(side: Side) -> (f32, f32, f32) {
         return match side {
             Side::Black => (0.8, 0.5, 0.0),
@@ -558,6 +606,7 @@ impl Window3D {
         };
     }
 
+    /// Returns player status to show on the screen.
     fn player_str(&self, i: usize) -> String {
         if i >= 2 {
             // TODO: create a separate enum for player indices
@@ -589,13 +638,21 @@ impl Window3D {
     }
 }
 
+/// Context for the input requested from UI by PlayerLocal.
 struct PendingInput {
+    /// Where to send the resulting pole coords to.
     coord_sender: mpsc::Sender<PoleCoords>,
+    /// Side of the token to request. Only affects the color of the pole
+    /// pointer.
     side: Side,
 }
 
+/// Context of a single player.
 struct PlayerInfo {
+    /// Name as to show on the screen. Doesn't have to match to any other kind
+    /// of name for this player, it's up to UI to construct this name.
     name: String,
+
     state: PlayerState,
     side: Option<Side>,
 }

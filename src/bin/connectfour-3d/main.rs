@@ -1,13 +1,13 @@
 mod gui3d;
 
-use std::thread;
 use std::fmt;
 use std::str::FromStr;
+use std::thread;
 
 use anyhow::{anyhow, Result};
+use clap::Parser;
 use tokio::sync::mpsc;
 use tokio::task;
-use clap::Parser;
 
 use connectfour::game::Side;
 use connectfour::game_manager::player_local::{PlayerLocal, PlayerLocalToUI};
@@ -17,7 +17,7 @@ use connectfour::game_manager::{
 };
 
 #[derive(Debug, clap::Parser)]
-struct Cli {
+struct CliArgs {
     #[clap(short = 'o', long = "opponent", default_value_t = OpponentKind::Network)]
     opponent_kind: OpponentKind,
 
@@ -31,7 +31,7 @@ struct Cli {
 }
 
 fn main() {
-    let cli_args = Cli::parse();
+    let cli_args = CliArgs::parse();
     let opponent_kind = cli_args.opponent_kind;
 
     let (gm_to_ui_sender, gm_to_ui_receiver) = mpsc::channel::<GameManagerToUI>(16);
@@ -40,26 +40,29 @@ fn main() {
     // Setup tokio runtime in another thread.
     thread::spawn(move || async_runtime(gm_to_ui_sender, player_to_ui_tx, cli_args));
 
-    // Run GUI in the main thread. It's easier since when the user closes the window, the whole
-    // thing gets killed (albeit not yet gracefully).
+    // Run GUI in the main thread. It's easier since when the user closes the
+    // window, the whole thing gets killed (albeit not yet gracefully).
     let mut w = gui3d::Window3D::new(gm_to_ui_receiver, player_to_ui_rx, opponent_kind);
     w.run();
 
     // GUI window was closed by the user.
     //
-    // TODO: would be nice to implement some graceful shutdown, but not bothering for now.
+    // TODO: would be nice to implement some graceful shutdown, but not
+    // bothering for now.
 }
 
+/// Should be called in a separate OS thread, it'll handle all the tokio runtime.
 fn async_runtime(
     gm_to_ui_sender: mpsc::Sender<GameManagerToUI>,
     player_to_ui_tx: mpsc::Sender<PlayerLocalToUI>,
-    cli_args: Cli,
+    cli_args: CliArgs,
 ) {
     // Every player will need a copy of the sender, so clone it.
     let pwhite_to_ui_tx = player_to_ui_tx.clone();
     let pblack_to_ui_tx = player_to_ui_tx;
 
-    // For both players, create channels for bidirectional communication with the GameManager.
+    // For both players, create channels for bidirectional communication with
+    // the GameManager.
     let (gm_to_pwhite_tx, gm_to_pwhite_rx) = mpsc::channel::<GameManagerToPlayer>(16);
     let (pwhite_to_gm_tx, pwhite_to_gm_rx) = mpsc::channel::<PlayerToGameManager>(16);
 
@@ -70,6 +73,9 @@ fn async_runtime(
     rt.block_on(async {
         let mut set = task::JoinSet::new();
 
+        // Create the primary player, depending on the opponent_kind: either the
+        // network or local player. Network player *has* to be the primary one,
+        // since it will receive info from the server which has the big picture.
         set.spawn(async move {
             match cli_args.opponent_kind {
                 OpponentKind::Local => {
@@ -83,7 +89,12 @@ fn async_runtime(
                 }
                 OpponentKind::Network => {
                     let conn_url = url::Url::parse(&cli_args.url).unwrap();
-                    let mut p0 = PlayerWSClient::new(conn_url, cli_args.game_id, gm_to_pwhite_rx, pwhite_to_gm_tx);
+                    let mut p0 = PlayerWSClient::new(
+                        conn_url,
+                        cli_args.game_id,
+                        gm_to_pwhite_rx,
+                        pwhite_to_gm_tx,
+                    );
                     p0.run().await?;
                 }
             }
@@ -91,6 +102,7 @@ fn async_runtime(
             Ok::<(), anyhow::Error>(())
         });
 
+        // Create the secondary player, always local.
         set.spawn(async {
             let mut p1 = PlayerLocal::new(None, gm_to_pblack_rx, pblack_to_gm_tx, pblack_to_ui_tx);
             p1.run().await?;
@@ -98,6 +110,7 @@ fn async_runtime(
             Ok::<(), anyhow::Error>(())
         });
 
+        // Create the GameManager.
         set.spawn(async {
             let mut gm = GameManager::new(
                 gm_to_ui_sender,
@@ -134,6 +147,7 @@ fn async_runtime(
     })
 }
 
+/// Kind of the opponent: local or network.
 #[derive(Debug, Copy, Clone)]
 pub enum OpponentKind {
     Local,
