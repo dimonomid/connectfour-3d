@@ -37,7 +37,7 @@ pub enum PlayerToPlayer {
     OpponentIsHere(GameStartOrResume),
     OpponentIsGone,
 
-    PutToken(game::CoordsXZ),
+    PutToken(game::PoleCoords),
 }
 
 #[derive(Debug)]

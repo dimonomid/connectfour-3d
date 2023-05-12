@@ -16,7 +16,7 @@ use tokio_tungstenite::tungstenite;
 pub enum PlayerLocalToUI {
     // Lets UI know that we're waiting for the input, and when it's done,
     // the resulting coords should be sent via the provided sender.
-    RequestInput(game::Side, mpsc::Sender<game::CoordsXZ>),
+    RequestInput(game::Side, mpsc::Sender<game::PoleCoords>),
 }
 
 pub struct PlayerWSClient {
@@ -28,6 +28,9 @@ pub struct PlayerWSClient {
     from_gm: mpsc::Receiver<GameManagerToPlayer>,
     to_gm: mpsc::Sender<PlayerToGameManager>,
 
+    /// Message that we received from the server; all the PlayerState::NonReady states that this
+    /// player generates will be prepended with that message, until the status finally becomes
+    /// PlayerState::Ready.
     server_msg: Option<String>,
 }
 
@@ -78,8 +81,9 @@ impl PlayerWSClient {
             game_id: self.game_id.clone(),
             player_name: "me".to_string(), // TODO: OS username (but it's actually not used by the server yet).
 
-            // TODO: send actual current board state. This way, the game can resume if server was
-            // rebooted while both clients kept running and eventually reconnected.
+            // TODO: send actual current board state, instead of generating a brand new one. This
+            // way, the game can resume if server was rebooted while both clients kept running and
+            // eventually reconnected.
             game_state: WSFullGameState {
                 game_state: GameState::WaitingFor(game::Side::White),
                 ws_player_side: game::Side::White,
@@ -118,7 +122,7 @@ impl PlayerWSClient {
                                 .send(PlayerToGameManager::SetFullGameState(FullGameState{
                                     game_state: v.game_state.game_state,
                                     primary_player_side: v.game_state.ws_player_side,
-                                    board: v.game_state.board.clone(),
+                                    board: v.game_state.board,
                                 }))
                                 .await?;
                         }
@@ -151,6 +155,7 @@ impl PlayerWSClient {
     }
 
     pub async fn upd_state_not_ready(&mut self, mut state: &str) -> Result<()> {
+        // If we have server_msg stored, then prepend the state with that server_msg.
         let mut tmp;
         if let Some(server_msg) = &self.server_msg {
             tmp = server_msg.clone();

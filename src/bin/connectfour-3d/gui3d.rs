@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use std::vec::Vec;
 
 use super::OpponentKind;
-use connectfour::game::{CoordsXZ, Side, WinRow, ROW_SIZE};
+use connectfour::game::{PoleCoords, Side, WinRow, ROW_SIZE};
 use connectfour::game_manager::player_local::PlayerLocalToUI;
 use connectfour::game_manager::{GameManagerToUI, GameState, PlayerState};
 use ordered_float::OrderedFloat;
@@ -185,7 +185,7 @@ impl Window3D {
                     .as_ref()
                     .expect("no pending_input")
                     .coord_sender
-                    .try_send(CoordsXZ {
+                    .try_send(PoleCoords {
                         x: coords.0,
                         z: coords.1,
                     }) {
@@ -593,7 +593,7 @@ impl Window3D {
 }
 
 struct PendingInput {
-    coord_sender: mpsc::Sender<CoordsXZ>,
+    coord_sender: mpsc::Sender<PoleCoords>,
     side: Side,
 }
 

@@ -6,7 +6,7 @@ use crate::game_manager::GameState;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum WSClientToServer {
     Hello(WSClientInfo),
-    PutToken(game::CoordsXZ),
+    PutToken(game::PoleCoords),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -14,7 +14,7 @@ pub enum WSServerToClient {
     Ping,
     Msg(String),
     GameReset(GameReset),
-    PutToken(game::CoordsXZ),
+    PutToken(game::PoleCoords),
     OpponentIsGone,
 }
 

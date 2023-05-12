@@ -100,7 +100,7 @@ impl GameManager {
 
         // Update UI about the player state
         self.to_ui
-            .send(GameManagerToUI::PlayerStateChanged(i, state.clone()))
+            .send(GameManagerToUI::PlayerStateChanged(i, state))
             .await
             .context("updating UI")?;
 
@@ -143,7 +143,7 @@ impl GameManager {
 
         // Update UI.
         self.to_ui
-            .send(GameManagerToUI::ResetBoard(fgstate.board.clone()))
+            .send(GameManagerToUI::ResetBoard(fgstate.board))
             .await
             .context("updating UI")?;
 
@@ -217,7 +217,7 @@ impl GameManager {
     pub async fn handle_player_put_token(
         &mut self,
         i: usize,
-        coords: game::CoordsXZ,
+        coords: game::PoleCoords,
     ) -> Result<()> {
         let side = self.players[i].side;
 
@@ -263,7 +263,7 @@ impl GameManager {
         self.to_ui
             .send(GameManagerToUI::SetToken(
                 player_side,
-                game::CoordsFull {
+                game::TokenCoords {
                     x: coords.x,
                     y: res.y,
                     z: coords.z,
@@ -284,7 +284,7 @@ impl GameManager {
             self.game_state = Some(GameState::WonBy(next_move_side));
 
             self.to_ui
-                .send(GameManagerToUI::WinRow(self.game.get_win_row().unwrap()))
+                .send(GameManagerToUI::WinRow(self.game.get_win_row().clone().unwrap()))
                 .await
                 .context("updating UI")?;
         } else {
@@ -296,7 +296,7 @@ impl GameManager {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
 pub enum GameState {
     WaitingFor(game::Side),
     WonBy(game::Side),
@@ -315,7 +315,7 @@ pub struct FullGameState {
 }
 
 /// Player state from the point of view of the GameManager.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum PlayerState {
     /// Not-yet-ready, with a human-readable string message explaining the status.
     NotReady(String),
@@ -326,7 +326,7 @@ pub enum PlayerState {
 #[derive(Debug)]
 pub enum GameManagerToPlayer {
     Reset(game::BoardState, game::Side),
-    OpponentPutToken(game::CoordsXZ),
+    OpponentPutToken(game::PoleCoords),
     GameState(GameState),
 }
 
@@ -337,13 +337,13 @@ pub enum PlayerToGameManager {
     /// secondary player does this, GameManager will just ignore it.
     SetFullGameState(FullGameState),
     StateChanged(PlayerState),
-    PutToken(game::CoordsXZ),
+    PutToken(game::PoleCoords),
 }
 
 /// Message that a GameManager can send to UI.
 #[derive(Debug)]
 pub enum GameManagerToUI {
-    SetToken(game::Side, game::CoordsFull),
+    SetToken(game::Side, game::TokenCoords),
     ResetBoard(game::BoardState),
     PlayerStateChanged(usize, PlayerState),
     PlayerSidesChanged(game::Side, game::Side),

@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 pub enum PlayerLocalToUI {
     // Lets UI know that we're waiting for the input, and when it's done,
     // the resulting coords should be sent via the provided sender.
-    RequestInput(game::Side, mpsc::Sender<game::CoordsXZ>),
+    RequestInput(game::Side, mpsc::Sender<game::PoleCoords>),
 }
 
 pub struct PlayerLocal {
@@ -20,8 +20,8 @@ pub struct PlayerLocal {
 
     to_ui: mpsc::Sender<PlayerLocalToUI>,
 
-    coords_from_ui_sender: mpsc::Sender<game::CoordsXZ>,
-    coords_from_ui_receiver: mpsc::Receiver<game::CoordsXZ>,
+    coords_from_ui_sender: mpsc::Sender<game::PoleCoords>,
+    coords_from_ui_receiver: mpsc::Receiver<game::PoleCoords>,
 }
 
 impl PlayerLocal {
@@ -34,7 +34,7 @@ impl PlayerLocal {
         to_ui: mpsc::Sender<PlayerLocalToUI>,
     ) -> PlayerLocal {
         // Create the channel which we'll be asking UI to send the user-picked coords to.
-        let (coords_from_ui_sender, coords_from_ui_receiver) = mpsc::channel::<game::CoordsXZ>(1);
+        let (coords_from_ui_sender, coords_from_ui_receiver) = mpsc::channel::<game::PoleCoords>(1);
 
         PlayerLocal {
             side: side,
