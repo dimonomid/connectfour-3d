@@ -13,6 +13,7 @@ use kiss3d::window::Window;
 use ordered_float::OrderedFloat;
 use tokio::sync::mpsc;
 
+use super::sounds;
 use super::OpponentKind;
 use connectfour::game::{PoleCoords, Side, TokenCoords, WinRow, ROW_SIZE};
 use connectfour::game_manager::player_local::PlayerLocalToUI;
@@ -47,6 +48,8 @@ pub struct Window3D {
     w: Window,
     font: Rc<Font>,
     camera: ArcBall,
+
+    sound_player: sounds::Player,
 
     /// A vector of currently added tokens as spheres.
     tokens: Vec<Option<SceneNode>>,
@@ -96,6 +99,7 @@ pub struct Window3D {
 
 impl Window3D {
     pub fn new(
+        sound_player: sounds::Player,
         from_gm: mpsc::Receiver<GameManagerToUI>,
         from_players: mpsc::Receiver<PlayerLocalToUI>,
         opponent_kind: OpponentKind,
@@ -131,6 +135,7 @@ impl Window3D {
             w,
             font: Font::default(),
             camera,
+            sound_player,
             tokens: vec![None; ROW_SIZE * ROW_SIZE * ROW_SIZE],
             pole_pointer,
             pending_input: None,
@@ -355,6 +360,11 @@ impl Window3D {
                 GameManagerToUI::SetToken(side, tcoords) => {
                     self.add_token(side, tcoords);
                     self.set_last_token(tcoords);
+
+                    // Also play sound effect. TODO: make it optional.
+                    self.sound_player
+                        .play(sounds::Sound::PutToken(side))
+                        .unwrap();
                 }
                 GameManagerToUI::ResetBoard(board) => {
                     for maybe_token in &mut self.tokens {

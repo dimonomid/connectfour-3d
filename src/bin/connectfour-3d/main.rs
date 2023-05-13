@@ -1,4 +1,5 @@
 mod gui3d;
+mod sounds;
 
 use std::fmt;
 use std::str::FromStr;
@@ -30,7 +31,7 @@ struct CliArgs {
     game_id: String,
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli_args = CliArgs::parse();
     let opponent_kind = cli_args.opponent_kind;
 
@@ -40,15 +41,24 @@ fn main() {
     // Setup tokio runtime in another thread.
     thread::spawn(move || async_runtime(gm_to_ui_sender, player_to_ui_tx, cli_args));
 
+    let sound_player = sounds::Player::new()?;
+
     // Run GUI in the main thread. It's easier since when the user closes the
     // window, the whole thing gets killed (albeit not yet gracefully).
-    let mut w = gui3d::Window3D::new(gm_to_ui_receiver, player_to_ui_rx, opponent_kind);
+    let mut w = gui3d::Window3D::new(
+        sound_player,
+        gm_to_ui_receiver,
+        player_to_ui_rx,
+        opponent_kind,
+    );
     w.run();
 
     // GUI window was closed by the user.
     //
     // TODO: would be nice to implement some graceful shutdown, but not
     // bothering for now.
+
+    Ok(())
 }
 
 /// Should be called in a separate OS thread, it'll handle all the tokio runtime.
