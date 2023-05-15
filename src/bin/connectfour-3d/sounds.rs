@@ -22,22 +22,23 @@ pub struct Player {
     _stream: OutputStream,
     stream_handle: OutputStreamHandle,
 
-    sound_data: HashMap<Sound, Cursor<Vec<u8>>>,
+    sound_data: HashMap<Sound, &'static [u8]>,
 }
 
 impl Player {
     pub fn new() -> Result<Player> {
         let (_stream, stream_handle) = OutputStream::try_default()?;
 
-        let put_token_white_bytes =
-            Cursor::new(include_bytes!("../../../res/token_put_white.ogg").to_vec());
-        let put_token_black_bytes =
-            Cursor::new(include_bytes!("../../../res/token_put_black.ogg").to_vec());
-
         let p = Player {
             sound_data: HashMap::from([
-                (Sound::PutToken(Side::White), put_token_white_bytes),
-                (Sound::PutToken(Side::Black), put_token_black_bytes),
+                (
+                    Sound::PutToken(Side::White),
+                    include_bytes!("../../../res/token_put_white.ogg").as_slice(),
+                ),
+                (
+                    Sound::PutToken(Side::Black),
+                    include_bytes!("../../../res/token_put_black.ogg").as_slice(),
+                ),
             ]),
             _stream,
             stream_handle,
@@ -48,8 +49,7 @@ impl Player {
 
     /// Plays the requested sound.
     pub fn play(&self, sound: Sound) -> Result<()> {
-        // TODO: don't clone the whole vector.
-        let source = Decoder::new(self.sound_data[&sound].clone())?;
+        let source = Decoder::new(Cursor::new(self.sound_data[&sound]))?;
         self.stream_handle.play_raw(source.convert_samples())?;
 
         Ok(())
