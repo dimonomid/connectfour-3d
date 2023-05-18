@@ -42,7 +42,7 @@ impl PlayerLocal {
         let (coords_from_ui_sender, coords_from_ui_receiver) = mpsc::channel::<game::PoleCoords>(1);
 
         PlayerLocal {
-            side: side,
+            side,
             from_gm,
             to_gm,
             to_ui,

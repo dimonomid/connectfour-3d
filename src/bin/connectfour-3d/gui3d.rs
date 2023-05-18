@@ -246,7 +246,7 @@ impl Window3D {
             .set_visible(visible);
     }
 
-    fn handle_user_input(&mut self, event: &Event) {
+    fn handle_user_input(&mut self, event: &Event<'_>) {
         match event.value {
             WindowEvent::MouseButton(_btn, Action::Press, _modif) => {
                 self.mouse_down = true;
@@ -553,11 +553,7 @@ impl Window3D {
     /// Return whether we are currently waiting for the user's input where to
     /// put the token.
     fn waiting_for_input(&self) -> bool {
-        if let Some(_) = self.pending_input {
-            return true;
-        }
-
-        false
+        self.pending_input.is_some()
     }
 
     /// Return 3D coords (translation) of the given pole.
@@ -608,7 +604,7 @@ impl Window3D {
 
     /// Just a shortcut to compare two f32-s.
     fn cmpf32(n: f32, m: f32) -> Ordering {
-        return OrderedFloat(n).cmp(&OrderedFloat(m));
+        OrderedFloat(n).cmp(&OrderedFloat(m))
     }
 
     /// Try to convert mouse pointer coords into approximate 3D coords of a
@@ -685,10 +681,10 @@ impl Window3D {
 
     /// Return RGB floats for the given game side.
     fn color_by_side(side: Side) -> (f32, f32, f32) {
-        return match side {
+        match side {
             Side::Black => (0.8, 0.5, 0.0),
             Side::White => (1.0, 1.0, 1.0),
-        };
+        }
     }
 
     /// Returns player status to show on the screen.
@@ -709,7 +705,7 @@ impl Window3D {
                 s.push_str(&format!(": {}", v));
             }
             PlayerState::Ready => {
-                s.push_str(&format!(": ready"));
+                s.push_str(": ready");
             }
         }
 

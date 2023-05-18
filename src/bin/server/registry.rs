@@ -97,15 +97,12 @@ impl Registry {
     ) -> Result<Arc<GameCtx>> {
         let mut m = self.game_by_name.lock().await;
 
-        // Try to join existin game, if any.
-        match self
+        // Try to join existing game, if any.
+        if let Some(res) = self
             .try_join_game(&mut m, game_id, player_id, &to_player)
             .await
         {
-            Some(res) => {
-                return res;
-            }
-            None => {}
+            return res;
         }
 
         // There's no existing game, so creating a new one.
@@ -168,7 +165,7 @@ impl Registry {
                 // The game already exists and has not ended yet, check how many
                 // players are there.  If both are there, error out; otherwise,
                 // add the new player and return the game.
-                if let Some(_) = gd.player_sec {
+                if gd.player_sec.is_some() {
                     println!("game {} already has both players", game_id);
                     return Some(Err(anyhow!("game {} already has both players", game_id)));
                 }
@@ -205,13 +202,11 @@ impl Registry {
 
                 println!("game {}: added new player {}", game_id, player_id);
 
-                return Some(Ok(gc));
+                Some(Ok(gc))
             }
 
             // If the game doesn't exist yet, let the caller create one.
-            None => {
-                return None;
-            }
+            None => None,
         }
     }
 
@@ -299,11 +294,11 @@ impl GameData {
     fn num_players(&self) -> usize {
         let mut ret = 0;
 
-        if let Some(_) = self.player_pri {
+        if self.player_pri.is_some() {
             ret += 1;
         }
 
-        if let Some(_) = self.player_sec {
+        if self.player_sec.is_some() {
             ret += 1;
         }
 

@@ -98,13 +98,13 @@ impl GameManager {
             .to
             .send(GameManagerToPlayer::GameStateChanged(gs))
             .await
-            .context(format!("player 0"))?;
+            .context("player 0")?;
 
         self.players[1]
             .to
             .send(GameManagerToPlayer::GameStateChanged(gs))
             .await
-            .context(format!("player 1"))?;
+            .context("player 1")?;
 
         self.to_ui
             .send(GameManagerToUI::GameStateChanged(gs))
@@ -190,7 +190,7 @@ impl GameManager {
 
     fn both_players_mut(&mut self) -> (&mut PlayerCtx, &mut PlayerCtx) {
         let (v0, v1) = self.players.split_at_mut(1);
-        return (&mut v0[0], &mut v1[0]);
+        (&mut v0[0], &mut v1[0])
     }
 
     fn opponent_idx(i: usize) -> usize {
@@ -211,7 +211,7 @@ impl GameManager {
                     return Ok(&self.players[0]);
                 }
 
-                return Ok(&self.players[1]);
+                Ok(&self.players[1])
             }
             None => Err(anyhow!("player 0 doesn't have a side")),
         }

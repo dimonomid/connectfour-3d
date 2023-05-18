@@ -179,7 +179,7 @@ impl FromStr for OpponentKind {
 }
 
 impl fmt::Display for OpponentKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             OpponentKind::Local => write!(f, "local"),
             OpponentKind::Network => write!(f, "network"),

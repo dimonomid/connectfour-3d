@@ -122,8 +122,8 @@ impl Game {
                     self.win_row = self.check_win();
 
                     return Ok(PutResult {
-                        y: y,
-                        won: !self.win_row.is_none(),
+                        y,
+                        won: self.win_row.is_some(),
                     });
                 }
 
@@ -168,9 +168,7 @@ impl Game {
         // Vertical rows (constant x, z).
         for x in 0..ROW_SIZE {
             for z in 0..ROW_SIZE {
-                let row = self.check_win_row(|y| -> TokenCoords {
-                    return TokenCoords { x, y, z };
-                });
+                let row = self.check_win_row(|y| -> TokenCoords { TokenCoords { x, y, z } });
                 if let Some(win_row) = row {
                     return Some(win_row);
                 }
@@ -180,9 +178,7 @@ impl Game {
         // Horizontal rows with constant x, y.
         for x in 0..ROW_SIZE {
             for y in 0..ROW_SIZE {
-                let row = self.check_win_row(|z| -> TokenCoords {
-                    return TokenCoords { x, y, z };
-                });
+                let row = self.check_win_row(|z| -> TokenCoords { TokenCoords { x, y, z } });
                 if let Some(win_row) = row {
                     return Some(win_row);
                 }
@@ -192,9 +188,7 @@ impl Game {
         // Horizontal rows with constant z, y.
         for z in 0..ROW_SIZE {
             for y in 0..ROW_SIZE {
-                let row = self.check_win_row(|x| -> TokenCoords {
-                    return TokenCoords { x, y, z };
-                });
+                let row = self.check_win_row(|x| -> TokenCoords { TokenCoords { x, y, z } });
                 if let Some(win_row) = row {
                     return Some(win_row);
                 }
@@ -204,20 +198,18 @@ impl Game {
         // Diagonal rows with constant x.
         for x in 0..ROW_SIZE {
             // Ascending y
-            let row = self.check_win_row(|n| -> TokenCoords {
-                return TokenCoords { x, y: n, z: n };
-            });
+            let row = self.check_win_row(|n| -> TokenCoords { TokenCoords { x, y: n, z: n } });
             if let Some(win_row) = row {
                 return Some(win_row);
             }
 
             // Descending y
             let row = self.check_win_row(|n| -> TokenCoords {
-                return TokenCoords {
+                TokenCoords {
                     x,
                     y: ROW_SIZE - 1 - n,
                     z: n,
-                };
+                }
             });
             if let Some(win_row) = row {
                 return Some(win_row);
@@ -227,20 +219,18 @@ impl Game {
         // Diagonal rows with constant z.
         for z in 0..ROW_SIZE {
             // Ascending y
-            let row = self.check_win_row(|n| -> TokenCoords {
-                return TokenCoords { x: n, y: n, z };
-            });
+            let row = self.check_win_row(|n| -> TokenCoords { TokenCoords { x: n, y: n, z } });
             if let Some(win_row) = row {
                 return Some(win_row);
             }
 
             // Descending y
             let row = self.check_win_row(|n| -> TokenCoords {
-                return TokenCoords {
+                TokenCoords {
                     x: n,
                     y: ROW_SIZE - 1 - n,
                     z,
-                };
+                }
             });
             if let Some(win_row) = row {
                 return Some(win_row);
@@ -250,20 +240,18 @@ impl Game {
         // Diagonal rows with constant y.
         for y in 0..ROW_SIZE {
             // Ascending z
-            let row = self.check_win_row(|n| -> TokenCoords {
-                return TokenCoords { x: n, y, z: n };
-            });
+            let row = self.check_win_row(|n| -> TokenCoords { TokenCoords { x: n, y, z: n } });
             if let Some(win_row) = row {
                 return Some(win_row);
             }
 
             // Descending z
             let row = self.check_win_row(|n| -> TokenCoords {
-                return TokenCoords {
+                TokenCoords {
                     x: n,
                     y,
                     z: ROW_SIZE - 1 - n,
-                };
+                }
             });
             if let Some(win_row) = row {
                 return Some(win_row);
@@ -271,20 +259,18 @@ impl Game {
         }
 
         // 3D diagonal with ascending x, y, z
-        let row = self.check_win_row(|n| -> TokenCoords {
-            return TokenCoords { x: n, y: n, z: n };
-        });
+        let row = self.check_win_row(|n| -> TokenCoords { TokenCoords { x: n, y: n, z: n } });
         if let Some(win_row) = row {
             return Some(win_row);
         }
 
         // 3D diagonal with ascending x, z; descending y
         let row = self.check_win_row(|n| -> TokenCoords {
-            return TokenCoords {
+            TokenCoords {
                 x: n,
                 y: ROW_SIZE - 1 - n,
                 z: n,
-            };
+            }
         });
         if let Some(win_row) = row {
             return Some(win_row);
@@ -292,11 +278,11 @@ impl Game {
 
         // 3D diagonal with ascending x, y; descending z
         let row = self.check_win_row(|n| -> TokenCoords {
-            return TokenCoords {
+            TokenCoords {
                 x: n,
                 y: n,
                 z: ROW_SIZE - 1 - n,
-            };
+            }
         });
         if let Some(win_row) = row {
             return Some(win_row);
@@ -304,11 +290,11 @@ impl Game {
 
         // 3D diagonal with ascending x; descending y, z
         let row = self.check_win_row(|n| -> TokenCoords {
-            return TokenCoords {
+            TokenCoords {
                 x: n,
                 y: ROW_SIZE - 1 - n,
                 z: ROW_SIZE - 1 - n,
-            };
+            }
         });
         if let Some(win_row) = row {
             return Some(win_row);
@@ -324,6 +310,7 @@ impl Game {
         let mut row_side: Option<Side> = None;
         let mut row = [TokenCoords { x: 0, y: 0, z: 0 }; ROW_SIZE];
 
+        #[allow(clippy::needless_range_loop)]
         for i in 0..ROW_SIZE {
             let tcoords = tcoord_getter(i);
             match self.get_token(tcoords) {
@@ -352,8 +339,14 @@ impl Game {
         // This was a winning row!
         Some(WinRow {
             side: row_side.unwrap(),
-            row: row,
+            row,
         })
+    }
+}
+
+impl Default for Game {
+    fn default() -> Self {
+        Game::new()
     }
 }
 
@@ -390,6 +383,12 @@ impl BoardState {
     /// A helper to convert token coords X, Y, Z into an index in the slice.
     fn coord_to_idx(tcoords: TokenCoords) -> usize {
         tcoords.x + tcoords.y * ROW_SIZE + tcoords.z * ROW_SIZE * ROW_SIZE
+    }
+}
+
+impl Default for BoardState {
+    fn default() -> Self {
+        BoardState::new()
     }
 }
 
